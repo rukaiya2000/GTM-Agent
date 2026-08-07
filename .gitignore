@@ -1,0 +1,9 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+*.db
+*.sqlite3
+x_oauth_token.json
+voice_corpus.json
