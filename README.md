@@ -1,53 +1,91 @@
-# Understudy
+<p align="center">
+  <img src="assets/logo.svg" alt="Wingman" width="440">
+</p>
 
-*An understudy learns your part, rehearses it, and has everything ready — but
-never goes on stage in your place.*
+<p align="center">
+  <strong>A go-to-market agent for X that finds the conversations worth joining and drafts what to say, while you decide what actually goes out.</strong>
+</p>
 
-A GTM agent for X that does the preparation work of building a presence — finding
-what's worth responding to, turning rough notes into publishable drafts, staging
-and scheduling — while every word that actually goes out is one you approved.
+<p align="center">
+  <img src="https://img.shields.io/badge/status-work%20in%20progress-F59E0B?style=flat-square" alt="Status: work in progress">
+  <img src="https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat-square" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/platform-X-1D9BF0?style=flat-square" alt="Platform: X">
+  <img src="https://img.shields.io/badge/storage-Notion-000000?style=flat-square" alt="Storage: Notion">
+</p>
 
-Currently X-only. See `x-req.md` for the original PRD (a few of its assumptions
-have since been overtaken by API changes — noted inline below).
+---
+
+> **Status: ongoing project, under active development.**
+> The full pipeline is implemented and verified offline against mocked API calls,
+> but no path has yet been exercised against the live X or Notion APIs. Interfaces,
+> schemas, and skill definitions are still subject to change. See
+> [Project status](#project-status) for exactly what is and is not proven.
+
+*A wingman goes into the room ahead of you, works out who is worth talking to, and
+opens the conversation. You are still the one who shows up and speaks.*
+
+Currently X only. LinkedIn support is planned (see [Roadmap](#roadmap)). The
+original product requirements live in `x-req.md`; several of its API assumptions
+have since been overtaken by platform changes, which are noted inline below.
+
+## Contents
+
+- [Motivation](#motivation)
+- [Architecture](#architecture)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Pipeline 1: Engagement](#pipeline-1-engagement)
+- [Pipeline 2: Publishing](#pipeline-2-publishing)
+- [The voice corpus](#the-voice-corpus)
+- [Project layout](#project-layout)
+- [Project status](#project-status)
+- [Roadmap](#roadmap)
 
 ## Motivation
 
-Building a presence on X takes two things that don't scale: posting consistently,
-and replying to the right people. Both are mostly *preparation* — finding the
-conversation, getting from a half-formed thought to something publishable. The
-writing itself is the small part.
+Building a presence on X requires two things that do not scale: posting
+consistently, and replying to the right people. Both are mostly preparation work.
+Finding the conversation worth joining, and getting from a half formed thought to
+something publishable, is where the time goes. The writing itself is the small
+part.
 
-The obvious fix is to point an LLM at it, and that fails in two specific ways:
+The obvious solution is to point a language model at the problem. That fails in
+two specific ways, and both shaped this design.
 
-**Generic output gets ignored.** A model writing "a good tweet about X" produces
-something that sounds like everyone else. On a platform where voice *is* the
-differentiator, that's worse than posting nothing. So this system never writes
-from a blank slate — every draft is conditioned on a corpus of posts you actually
-published, and once metrics exist, weighted toward the ones that actually landed.
+**Generic output gets ignored.** A model asked to write "a good tweet about X"
+produces something that sounds like everyone else. On a platform where voice is
+the differentiator, that is worse than posting nothing. Wingman therefore never
+writes from a blank slate. Every draft is conditioned on a corpus of posts you
+actually published, and once performance data exists, weighted toward the ones
+that measurably landed.
 
-**Automated engagement gets you suspended.** Auto-liking and auto-replying is the
-single clearest pattern platforms act on. So Understudy will fetch, rank, draft,
-and stage — but it never likes, never replies, and never publishes anything you
-haven't explicitly moved to `Ready to post`.
+**Automated engagement gets accounts suspended.** Auto-liking and auto-replying is
+the clearest pattern platforms act on. Wingman will fetch, rank, draft, and
+stage, but it never likes, never replies, and never publishes anything you have
+not explicitly moved to `Ready to post`.
 
-What's left is the honest division of labour: the machine does the fetching,
-deduping, ranking, and first-draft writing; you do the judging and the sending.
-Every automated step ends at a review gate in Notion, not at the API.
+What remains is a clear division of labour. The system handles fetching,
+deduplication, ranking, and first-draft writing. You handle judgement and
+publication. Every automated step terminates at a review gate in Notion rather
+than at an API call.
 
-A third principle emerged while building, after a few self-inflicted bugs:
-**schema lives in code, not in prose.** When the database schema was described in
-both skill instructions and Python, the two drifted and things broke silently.
-Now `TWEET_DRAFTS_SCHEMA` is the single definition and the skills only describe
-how to *use* the fields.
+A third principle emerged during development, after several self inflicted bugs:
+**schema belongs in code, not in prose.** When the database schema was described
+both in skill instructions and in Python, the two definitions drifted and broke
+silently. `TWEET_DRAFTS_SCHEMA` is now the single definition, and the skills only
+describe how to use those fields.
 
-## What this does
+## Architecture
 
-Two independent pipelines that share a voice corpus. Neither one automates
-engagement on your behalf — you always stay in the loop at the review step.
+Two independent pipelines share a common voice corpus. Neither automates
+engagement on your behalf; you remain in the loop at every review step.
+
+### Engagement pipeline
+
+Finds other people's posts worth replying to.
 
 ```
-ENGAGEMENT — find other people's posts worth replying to
-─────────────────────────────────────────────────────────────────────────────
   discover_accounts.py ──▶ Discovery Database ──▶ you mark Approved
   (search topics for                                     │
    accounts worth tracking)              --promote ──────┘
@@ -83,10 +121,13 @@ ENGAGEMENT — find other people's posts worth replying to
                           │                                   │
                           ├──▶ trains next curation run       │
                           └──▶ sync_replies.py ───────────────┘
+```
 
+### Publishing pipeline
 
-PUBLISHING — turn rough notes into posts
-─────────────────────────────────────────────────────────────────────────────
+Turns rough notes into posts.
+
+```
   your rough notes
   (Notion page body)
         │
@@ -122,13 +163,22 @@ PUBLISHING — turn rough notes into posts
                                          → polish prefers what landed)
 ```
 
-**Why some parts are scripts and others are skills.** Anything that spends money,
-must be deterministic, or runs unattended is a script — fetching, deduping,
-ranking, posting. Anything needing judgment is a skill — voice matching, relevance
-curation. The Notion schema also lives in code (`TWEET_DRAFTS_SCHEMA`) rather than
-in skill prose, because when it lived in both they drifted and broke.
+### Scripts versus skills
 
-## Setup
+The split is deliberate. Anything that spends money, must be deterministic, or
+runs unattended is a Python script: fetching, deduplication, ranking, posting.
+Anything requiring judgement is a Claude Code skill: voice matching, relevance
+curation, reply drafting.
+
+## Prerequisites
+
+- Python 3.11 or later
+- An X developer account with pay-per-use billing and credits loaded
+- X Premium, if you intend to publish long-form Articles
+- A Notion workspace, with an internal integration you can create
+- Claude Code, for the skill-based steps
+
+## Installation
 
 ```bash
 python3 -m venv .venv
@@ -136,228 +186,245 @@ python3 -m venv .venv
 cp .env.example .env
 ```
 
-Fill in `.env`:
+## Configuration
 
-| Variable | Needed for | How to get it |
+Populate `.env` with the following:
+
+| Variable | Required for | How to obtain |
 |---|---|---|
-| `X_BEARER_TOKEN` | all reads | X developer portal, app-only bearer. Needs pay-per-use credits loaded. |
-| `X_CLIENT_ID` / `X_CLIENT_SECRET` | posting | Same app → User authentication settings → Read+Write, Confidential client, callback `http://127.0.0.1:8765/callback` |
-| `NOTION_API_TOKEN` | all Notion access | notion.so/my-integrations, then share your Notion page with the integration |
+| `X_BEARER_TOKEN` | all read operations | X developer portal, app-only bearer token. Requires pay-per-use credits. |
+| `X_CLIENT_ID`, `X_CLIENT_SECRET` | publishing | Same app, under User authentication settings. Read and write, confidential client, callback `http://127.0.0.1:8765/callback` |
+| `NOTION_API_TOKEN` | all Notion access | notion.so/my-integrations, then share the target page with the integration |
 | `NOTION_TWEET_DRAFTS_DB_ID` | publishing | Written automatically by `setup.py` |
-| `NOTION_RESPONSE_CALENDAR_DB_ID` | engagement | The Response Calendar database id |
-| `NOTION_DISCOVERY_DB_ID` | account discovery | The Discovery Database id |
+| `NOTION_RESPONSE_CALENDAR_DB_ID` | engagement | The Response Calendar database ID |
+| `NOTION_DISCOVERY_DB_ID` | account discovery | The Discovery Database ID |
 
-The `NOTION_API_TOKEN` is **separate from Claude Code's Notion connection** — that
-one only exists inside a live chat session, and the posting scripts run unattended.
+`NOTION_API_TOKEN` is distinct from Claude Code's own Notion connection. The
+latter exists only inside a live chat session, whereas the posting scripts run
+unattended and require their own credential.
 
-### First run, in order
+### Initial setup
+
+Run once, in this order:
 
 ```bash
-.venv/bin/python scripts/smoke_test.py <username>                    # 1. auth works?
+.venv/bin/python scripts/smoke_test.py <username>                    # 1. verify auth
 .venv/bin/python scripts/setup.py <notion-page-url> <your-username>  # 2. bootstrap
 .venv/bin/python scripts/x_oauth_login.py                            # 3. authorize posting
 ```
 
-**`setup.py`** creates the `Tweet Drafts` database under that Notion page with the
-full schema, writes its id into `.env`, and seeds `voice_corpus.json` from your
-recent posts (up to 30 short → `tweets`, up to 10 long → `articles`). It refuses to
-run twice unless you pass `--force-new-db`.
+`setup.py` creates the `Tweet Drafts` database under the given Notion page with
+the full schema, writes its ID into `.env`, and seeds `voice_corpus.json` from
+your recent posts (up to 30 short-form entries and 10 long-form). It refuses to
+run a second time unless invoked with `--force-new-db`.
 
-**`x_oauth_login.py`** opens your browser, catches the redirect on `127.0.0.1:8765`,
-and saves a refreshable token to `x_oauth_token.json` (gitignored). Re-run it if
-that file is deleted or the refresh token is revoked.
+`x_oauth_login.py` opens a browser for authorization, captures the redirect on
+`127.0.0.1:8765`, and stores a refreshable token in `x_oauth_token.json` (which is
+gitignored). Re-run it if that file is deleted or the refresh token is revoked.
 
----
+## Pipeline 1: Engagement
 
-## Pipeline 1 — Engagement
+### Configuring sources
 
-### Configure what to watch
+`interests.md` is plain markdown containing `## Accounts` and `## Topics`
+sections. Only `-` bullets are parsed, so prose and notes may appear anywhere in
+the file without affecting behaviour.
 
-`interests.md` — plain markdown, `## Accounts` and `## Topics` sections. Only `-`
-bullets are parsed, so prose and notes anywhere in the file are ignored.
-
-You can populate the Accounts section by hand, or let the system suggest people:
+You can populate the Accounts section manually, or have the system propose
+candidates:
 
 ```bash
 .venv/bin/python scripts/discover_accounts.py             # stage candidates
-.venv/bin/python scripts/discover_accounts.py --promote   # Approved → interests.md
+.venv/bin/python scripts/discover_accounts.py --promote   # Approved to interests.md
 ```
 
-Searches your topics, collects the authors, filters out accounts under
-`--min-followers` (default 500), and stages them in the **Discovery Database** with
-`Review Status = New`. You mark the good ones `Approved` in Notion, then `--promote`
-appends them to `interests.md`. The review gate is deliberate — an account only
-starts costing read budget in `discover.py` once you've okayed it.
+The first form searches your topics, collects post authors, filters out accounts
+below `--min-followers` (default 500), and stages them in the Discovery Database
+with `Review Status = New`. After you mark the useful ones `Approved` in Notion,
+`--promote` appends them to `interests.md`. The manual review gate is intentional:
+an account only begins consuming read budget in `discover.py` once you have
+approved it.
 
-### Discover
+### Discovering posts
 
 ```bash
-.venv/bin/python scripts/discover.py              # stages into Response Calendar
-.venv/bin/python scripts/discover.py --dry-run    # preview, writes nothing
-.venv/bin/python scripts/harvest_and_rank.py      # older: prints only, accounts only
+.venv/bin/python scripts/discover.py              # stage into Response Calendar
+.venv/bin/python scripts/discover.py --dry-run    # preview without writing
+.venv/bin/python scripts/harvest_and_rank.py      # legacy: prints only, accounts only
 ```
 
-Fetches from accounts and topics, ranks by engagement, dedupes against both a local
-seen-set (`gtm_agent.db`) and rows already in the Response Calendar, then writes the
-top `--limit` (default 15) as `Status = New`. Read-only against X — it never likes,
+Fetches from configured accounts and topics, ranks by engagement, deduplicates
+against both a local seen-set (`gtm_agent.db`) and rows already present in the
+Response Calendar, then writes the top `--limit` results (default 15) with
+`Status = New`. All operations against X are read-only; the script never likes,
 replies, or posts.
 
-### Mentions
+### Monitoring mentions
 
 ```bash
 .venv/bin/python scripts/check_mentions.py <your-username>
 ```
 
-Replies to your posts, @-mentions and quotes are otherwise invisible to the system.
-These land in the **same** Response Calendar, so curation and reply-drafting work on
-them unchanged — the `Source` property (`discovery` vs `mention`) tells them apart,
-and mentions are usually worth answering first.
+Replies to your posts, @-mentions, and quotes are otherwise invisible to the
+system. These are staged into the same Response Calendar, so curation and reply
+drafting operate on them unchanged. The `Source` property distinguishes
+`discovery` from `mention`; mentions generally warrant a faster response.
 
-### Curate
+### Curating
 
-The `curate-discoveries` skill runs the script, then prunes what it staged by
-learning from what you've engaged with before.
+The `curate-discoveries` skill runs the discovery script, then prunes the staged
+results based on what you have engaged with previously.
 
-**The Response Calendar has two status properties differing only by case.** Notion
-matches property names exactly, so confusing them fails silently:
+**Important:** the Response Calendar contains two status properties whose names
+differ only by capitalization. Notion matches property names exactly, so
+confusing the two fails silently.
 
 | Property | Values | Written by |
 |---|---|---|
 | `Status` | `New`, `Reviewed`, `Stale`, `Rejected (irrelevant)`, `Rejected (IDK what to say)` | the pipeline |
-| `status` | `Commented`, `Rejected`, `not-commented` | **you only** |
+| `status` | `Commented`, `Rejected`, `not-commented` | you only |
 
-The lowercase `status` is the learning signal: `Commented` = positive, `Rejected` =
-negative, `not-commented` = **neutral** (no reply happened, but the content wasn't
-necessarily bad). The skill reads it and writes only capital `Status` — writing the
-lowercase one would corrupt the very signal it learns from.
+The lowercase `status` is the learning signal. `Commented` is positive evidence,
+`Rejected` is negative, and `not-commented` is explicitly neutral: no reply
+occurred, but the content was not necessarily unsuitable. The skill reads this
+property and writes only the capitalized `Status`. Writing the lowercase property
+would corrupt the signal the skill depends on.
 
-### Draft replies
+### Drafting replies
 
-The **`draft-replies`** skill fills `Reply 1`, `Reply 2`, `Reply 3` on staged rows
-with three genuinely different angles, in your voice — read from the same
-`voice_corpus.json` the publishing flow uses. That's the link between the two
-pipelines: discovery finds the post, the corpus supplies the voice.
+The `draft-replies` skill populates `Reply 1`, `Reply 2`, and `Reply 3` on staged
+rows with three substantively different angles, written in your voice from the
+same `voice_corpus.json` used by the publishing pipeline. This is the connection
+between the two pipelines: discovery locates the post, and the corpus supplies
+the voice.
 
-You then set `Selected` to the one you want and **reply by hand on X**. Nothing
-here posts for you — automated engagement is what gets accounts suspended
-(`x-req.md` §2.5), so the API is never used to reply.
+You then set `Selected` to your preferred option and reply manually on X. Nothing
+in this system posts on your behalf. Automated engagement is the primary cause of
+account suspensions (`x-req.md` §2.5), so the API is never used to reply.
 
-The skill only ever writes the three `Reply` fields. `Selected`, `Approved`,
-`Posted`, `Self-Written Reply` and the lowercase `status` all record what *you*
-decided — it never touches them.
+The skill writes only the three `Reply` fields. `Selected`, `Approved`, `Posted`,
+`Self-Written Reply`, and the lowercase `status` all record your decisions, and
+are never modified.
 
-Once you've replied, tick `Posted` and set `Selected`, then:
+Once you have replied, set `Selected` and tick `Posted`, then run:
 
 ```bash
 .venv/bin/python scripts/sync_replies.py
 ```
 
-That copies the reply you actually sent into `voice_corpus.json` as
+This copies the reply you actually sent into `voice_corpus.json` with
 `post_type: "reply"`, so future reply drafts learn from your real replies rather
-than only from your original posts. `Selected = Like/RT` is skipped — no text to
-learn from. Replies are keyed by Notion page id (there's no tweet id, since you
-posted by hand), so re-running is safe.
+than only from your original posts. Rows with `Selected = Like/RT` are skipped, as
+there is no text to learn from. Replies are keyed by Notion page ID rather than
+tweet ID (since you posted manually), so the script is safe to re-run.
 
-### Two API caveats
+### API constraints
 
-**Impressions work, but weakly.** `public_metrics.impression_count` is included in
-ranking at a deliberately tiny weight (0.01) — impressions run orders of magnitude
-larger than likes and would otherwise swamp real engagement, and for other people's
-posts the field is frequently `0`. Nothing depends on it. *This supersedes `x-req.md`
-§2.1, which says impressions aren't available for others' posts.*
+**Impressions are available but unreliable.** `public_metrics.impression_count`
+contributes to ranking at a deliberately small weight (0.01). Impression counts
+run orders of magnitude larger than like counts and would otherwise dominate the
+score, and for other users' posts the field frequently returns `0`. No behaviour
+depends on its presence. This supersedes `x-req.md` §2.1, which states that
+impressions are unavailable for other users' posts.
 
-**Topics are wired up but unproven.** Recent-search covers the last 7 days only, and
-whether it's callable on pay-per-use is `x-req.md` open item 2. `discover.py` degrades
-per-source — a failing topic is reported and accounts still work.
+**Topic search is implemented but unverified.** Recent-search covers only the
+past seven days, and whether it is callable on pay-per-use billing remains
+`x-req.md` open item 2. `discover.py` degrades per source: a failing topic is
+reported individually and account-based discovery continues to work.
 
----
+## Pipeline 2: Publishing
 
-## Pipeline 2 — Publishing
+### Drafting
 
-### Draft
+Place your rough notes in the page body of a `Tweet Drafts` row, set
+`Stage = Ready for AI Review`, and set `post-type` to `single-thread`,
+`multi-thread`, or `article`.
 
-Put your rough notes in the **page body** of a `Tweet Drafts` row and set
-`Stage = Ready for AI Review`. Set `post-type` to `single-thread`, `multi-thread`,
-or `article`.
+The `polish-tweet` skill rewrites the note in your voice, writes the result to
+`Final Text`, and sets `Stage = Ready for Human Review`. There is no chat approval
+step; review takes place in Notion.
 
-The **`polish-tweet`** skill rewrites it in your voice, writes the result to
-`Final Text`, and sets `Stage = Ready for Human Review`. No chat approval gate —
-review happens in Notion, not in conversation.
-
-| `post-type` | What it produces | Format in `Final Text` |
+| `post-type` | Output | Format in `Final Text` |
 |---|---|---|
-| `single-thread` | one tweet | plain text, ≤280 chars |
-| `multi-thread` | reply-chained thread | segments separated by a line of `---`, each ≤280 |
-| `article` | long-form Article | body only; headline goes in the `Title` property |
+| `single-thread` | one post | plain text, 280 characters maximum |
+| `multi-thread` | reply-chained thread | segments separated by a line containing only `---`, each within 280 characters |
+| `article` | long-form Article | body only; the headline is taken from the `Title` property |
 
-### Review
+### Reviewing
 
-In Notion, pick one:
-- **`Stage = Ready to post`** + set `Scheduled Time` → queued for publishing
-- **Edit `Final Text`** directly → then approve
-- **`Stage = Rejected Agent Post`** → the skill can retry it, and will read your
-  Notion **comments** on the row as feedback for what to change
+In Notion, choose one of the following:
 
-### Post
+- Set `Stage = Ready to post` and populate `Scheduled Time` to queue for
+  publication.
+- Edit `Final Text` directly, then approve.
+- Set `Stage = Rejected Agent Post`. The skill can then retry the draft, reading
+  any Notion comments on the row as feedback.
+
+### Publishing
 
 ```bash
 .venv/bin/python scripts/post_ready.py      # one due row per run
-.venv/bin/python scripts/post_all_due.py    # every due row, oldest first
+.venv/bin/python scripts/post_all_due.py    # all due rows, oldest first
 ```
 
-Or ask Claude to "post my ready tweets" — the `post-ready-tweets` skill is a thin
-trigger around `post_all_due.py`.
+Alternatively, ask Claude to post your ready tweets; the `post-ready-tweets` skill
+is a thin wrapper around `post_all_due.py`.
 
-Both only fire on rows where `Stage = Ready to post` **and** `Scheduled Time` is in
-the past. A row with no `Scheduled Time`, or one still in the future, is never
-touched — nothing is auto-scheduled or auto-spaced, so pacing is entirely yours.
+Both scripts act only on rows where `Stage = Ready to post` and `Scheduled Time`
+lies in the past. Rows without a `Scheduled Time`, or with one still in the
+future, are never touched. Nothing is auto-scheduled or auto-spaced, so posting
+cadence remains entirely under your control.
 
-On success: `Stage = Posted`, and the post is appended to `voice_corpus.json`. On
-failure: the error goes to `Post Error` and `Stage` is left alone so it retries.
+On success, `Stage` is set to `Posted` and the post is appended to
+`voice_corpus.json`. On failure, the error is written to `Post Error` and `Stage`
+is left unchanged so the row is retried on the next run.
 
-**No cron.** Run it by hand. Do that a few times before considering any automation —
-it spends real money per post and posting can't be undone.
+There is no cron integration by design. Run these scripts manually, and do so
+several times before considering any automation: each post costs money and cannot
+be undone.
 
-### Two failure cases that need you, not a re-run
+### Partial failure cases
 
-Both leave real state on X and deliberately do **not** auto-retry:
+Two failure modes leave real state on X and deliberately do not auto-retry, as a
+retry would compound the problem rather than resolve it. Both require manual
+intervention.
 
-- **Thread fails partway** → earlier tweets are live on X. The error records their
-  IDs. Retrying would duplicate the successful prefix.
-- **Article draft created but publish failed** → the draft exists on X. The error
-  records the draft id. Retrying would create a second draft.
-
----
+- **A thread failing partway through.** Earlier posts in the thread are already
+  live. The error message records their IDs. Retrying would duplicate the
+  successfully posted prefix.
+- **An Article draft created but not published.** The draft exists on X. The error
+  message records the draft ID. Retrying would create a second draft.
 
 ## The voice corpus
 
-`voice_corpus.json` (gitignored) is the **only** source of style exemplars for
-`polish-tweet`:
+`voice_corpus.json` (gitignored) is the sole source of style exemplars for
+`polish-tweet` and `draft-replies`:
 
 ```json
 {
-  "tweets":   [{"id", "text", "posted_url", "post_type"}],
-  "articles": [{"id", "title", "text", "posted_url"}]
+  "tweets":   [{"id", "text", "posted_url", "post_type", "metrics"}],
+  "articles": [{"id", "title", "text", "posted_url", "metrics"}]
 }
 ```
 
-Two buckets so short-form and long-form voice don't bleed into each other. It's
-seeded once by `setup.py` (or `fetch_voice_corpus.py`), then grows automatically —
-`post_ready.py` / `post_all_due.py` append on every successful post. That's the only
-append point, tied to a real post actually happening. `polish-tweet` only reads it.
+The two buckets keep short-form and long-form voice separate. The file is seeded
+once by `setup.py` (or `fetch_voice_corpus.py`) and grows automatically
+thereafter: `post_ready.py` and `post_all_due.py` append on every successful
+post. That is the only automatic append point, and it is tied to a post actually
+being published.
 
-**X Articles cannot be read through the API at all** — the tweet announcing an
-Article contains only a t.co link, and `note_tweet` returns long-*post* text, never
-Article content. So the `articles` bucket is seeded from long posts (>280 chars),
-the closest available long-form voice, and only fills properly as you publish
-articles through this pipeline.
+**X Articles cannot be read through the API.** The post announcing an Article
+contains only a t.co link, and `note_tweet` returns long-*post* text rather than
+Article content. The `articles` bucket is therefore seeded from long posts
+(over 280 characters), which is the closest available long-form voice reference,
+and fills properly only as you publish Articles through this pipeline.
 
-`sync_replies.py` adds replies you actually sent (from the Response Calendar) as
-`post_type: "reply"` entries — the closest exemplars for drafting new replies.
+`sync_replies.py` adds replies you actually sent as `post_type: "reply"` entries,
+which are the closest available exemplars when drafting new replies.
 
-`sync_posted.py` is separate and optional: it imports your X history into
-`Tweet Drafts` as `Posted` rows for visibility in the Notion UI. It does **not**
-feed `polish-tweet`.
+`sync_posted.py` is separate and optional. It imports your X history into
+`Tweet Drafts` as `Posted` rows for visibility within the Notion interface, and
+does not feed the voice corpus.
 
 ### Performance feedback
 
@@ -365,147 +432,158 @@ feed `polish-tweet`.
 .venv/bin/python scripts/fetch_metrics.py
 ```
 
-Pulls impressions, profile clicks and engagement counts for your own posts and
-attaches them to their corpus entries as a `metrics` object with an
-`engagement_rate`. `polish-tweet` and `draft-replies` then prefer exemplars that
-actually landed, instead of treating every past post as equally good.
+Retrieves impressions, profile clicks, and engagement counts for your own posts,
+attaching them to the corresponding corpus entries as a `metrics` object
+containing an `engagement_rate`. Both skills then favour exemplars that
+demonstrably performed, rather than treating every past post as equally
+representative.
 
-Two things to know:
-- **Private metrics only cover the last 30 days.** Older posts come back with
-  public metrics only. Run this regularly if you want history to accumulate.
-- **Missing metrics mean unmeasured, not bad.** Both skills are explicitly told
-  never to treat an absent `metrics` object as a negative signal — otherwise a
-  brand-new corpus would look like a corpus full of failures.
+Two constraints apply:
 
----
+- **Private metrics cover only the last 30 days.** Older posts return public
+  metrics only. Run this regularly for history to accumulate.
+- **Absent metrics indicate "unmeasured", not "unsuccessful".** Both skills are
+  explicitly instructed never to treat a missing `metrics` object as negative
+  evidence, since a newly seeded corpus would otherwise appear to be a corpus of
+  failures.
 
-## Layout
+## Project layout
 
-**Config you edit**
-- `interests.md` — accounts + topics to discover from
-- `.env` — credentials
+**User-editable configuration**
 
-**Generated (all gitignored)**
-- `voice_corpus.json` — style exemplars
-- `gtm_agent.db` — seen-set + user-id cache
-- `x_oauth_token.json` — posting token
+- `interests.md`: accounts and topics to discover from
+- `.env`: credentials
+
+**Generated files (all gitignored)**
+
+- `voice_corpus.json`: style exemplars
+- `gtm_agent.db`: seen-set and user ID cache
+- `x_oauth_token.json`: publishing token
 
 **Library** (`src/gtm_agent/`)
-- `config.py` — env var loading
-- `x_client.py` — X API: reads, tweets, threads, Articles, OAuth-authed writes
-- `x_oauth.py` — OAuth 2.0 PKCE login + token refresh
-- `notion_client.py` — Notion API; holds `TWEET_DRAFTS_SCHEMA`, the canonical schema
-- `interests.py` — parses `interests.md`
-- `store.py` — SQLite seen-set + user-id cache
-- `ranking.py` — engagement scoring, optional recency decay
-- `harvest.py` — account fetch + dedupe + rank
-- `posting.py` — thread/article parsing, validation, `post_row()`
-- `voice_corpus.py` — corpus load/save, `append_tweet` / `append_article`
 
-**Scripts**
-- `setup.py` — one-time bootstrap (creates DB, seeds corpus)
-- `smoke_test.py` — one-call auth check
-- `x_oauth_login.py` — one-time posting authorization
-- `discover.py` — fetch + rank + stage posts into Response Calendar
-- `discover_accounts.py` — find accounts by topic; `--promote` moves Approved ones into `interests.md`
-- `check_mentions.py` — stage replies/@-mentions into Response Calendar
-- `harvest_and_rank.py` — older print-only, accounts-only variant
-- `post_ready.py` / `post_all_due.py` — publish due rows
-- `fetch_voice_corpus.py` — seed/merge corpus from your timeline
-- `fetch_metrics.py` — attach your own post analytics to corpus entries
-- `sync_replies.py` — add replies you sent to the corpus as `post_type: reply`
-- `sync_posted.py` — import X history into Notion for visibility
+| Module | Responsibility |
+|---|---|
+| `config.py` | Environment variable loading |
+| `x_client.py` | X API: reads, posts, threads, Articles, metrics |
+| `x_oauth.py` | OAuth 2.0 PKCE login and token refresh |
+| `notion_client.py` | Notion API; owns `TWEET_DRAFTS_SCHEMA` |
+| `interests.py` | Parses `interests.md` |
+| `store.py` | SQLite seen-set and user ID cache |
+| `ranking.py` | Engagement scoring with optional recency decay |
+| `harvest.py` | Account fetch, deduplication, ranking |
+| `posting.py` | Thread and Article parsing, validation, `post_row()` |
+| `voice_corpus.py` | Corpus load, save, append, and metric attachment |
+
+**Scripts** (`scripts/`)
+
+| Script | Purpose |
+|---|---|
+| `setup.py` | One-time bootstrap: creates the database, seeds the corpus |
+| `smoke_test.py` | Single-call authentication check |
+| `x_oauth_login.py` | One-time publishing authorization |
+| `discover.py` | Fetch, rank, and stage posts into the Response Calendar |
+| `discover_accounts.py` | Find accounts by topic; `--promote` adds approved ones to `interests.md` |
+| `check_mentions.py` | Stage replies and mentions into the Response Calendar |
+| `harvest_and_rank.py` | Legacy print-only, accounts-only variant |
+| `post_ready.py`, `post_all_due.py` | Publish due rows |
+| `fetch_voice_corpus.py` | Seed or merge corpus entries from your timeline |
+| `fetch_metrics.py` | Attach post analytics to corpus entries |
+| `sync_replies.py` | Add sent replies to the corpus |
+| `sync_posted.py` | Import X history into Notion for visibility |
 
 **Skills** (`.claude/skills/`)
-- `polish-tweet` — rough note → voice-matched draft
-- `curate-discoveries` — run discovery, prune by past `status` signal
-- `draft-replies` — write Reply 1/2/3 options in your voice (you post them by hand)
-- `post-ready-tweets` — thin trigger for `post_all_due.py`
 
----
+| Skill | Purpose |
+|---|---|
+| `polish-tweet` | Rough note to voice-matched draft |
+| `curate-discoveries` | Run discovery, prune using the `status` signal |
+| `draft-replies` | Write three reply options in your voice |
+| `post-ready-tweets` | Thin trigger for `post_all_due.py` |
 
-## Status
+## Project status
 
-**Nothing has run against the live X or Notion APIs yet.** Every path is verified
-offline with mocked calls; all of it is blocked on credentials + X credits.
+**No component has yet been run against the live X or Notion APIs.** Every code
+path is verified offline against mocked calls. Live verification is blocked on
+credentials and X API credits.
 
-Working, pending live verification:
-- Discovery (accounts + topics), ranking, dedupe, staging to Response Calendar
-- Polish for all three post types, plus rejected-draft retry using Notion comments
-- Reply drafting into the Response Calendar, sharing the publishing flow's voice corpus
-- Posting for all three post types, including reply-chained threads and the
+Implemented and offline-verified:
+
+- Discovery across accounts and topics, with ranking, deduplication, and staging
+- Account discovery and mention monitoring, both staged for manual review
+- Voice-matched drafting for all three post types, plus rejected-draft retry
+  informed by Notion comments
+- Reply drafting sharing the publishing pipeline's voice corpus
+- Publishing for all three post types, including reply-chained threads and the
   Articles API, with both partial-failure paths handled
-- Voice corpus seeding and automatic growth on post
-- Performance metrics feeding exemplar selection; sent replies feeding the corpus
-- Mention monitoring and account discovery, both staged for manual review
+- Corpus seeding, automatic growth on publication, performance metric attachment,
+  and sent-reply ingestion
 
-Known gaps:
-- **Topics unverified** — recent-search may not be callable on pay-per-use
-  (`x-req.md` open item 2). Degrades gracefully if not.
-- **No automatic polling** — `polish-tweet` must be asked; it doesn't watch for
-  `Ready for AI Review` rows on its own.
-- **No scheduler** — posting is manual, gated on `Scheduled Time`.
-- **`sync_posted.py` dedupes by exact text match**, not tweet ID, because the
-  `Posted URL` property was removed from the database. Weaker, but avoids
-  re-importing everything on every run.
-- **Articles need X Premium**, and a thin `articles` corpus means thin long-form
-  voice matching until you've published a few.
+Known limitations:
 
----
+| Limitation | Detail |
+|---|---|
+| Topic search unverified | Recent-search may not be callable on pay-per-use billing (`x-req.md` open item 2). Degrades gracefully. |
+| No automatic polling | `polish-tweet` must be invoked; it does not watch for `Ready for AI Review` rows. |
+| No scheduler | Publishing is manual, gated on `Scheduled Time`. |
+| Weak `sync_posted.py` deduplication | Matches on exact text rather than tweet ID, since the `Posted URL` property was removed. Avoids re-importing on every run. |
+| Articles require X Premium | A sparse `articles` bucket also means weak long-form voice matching until several are published. |
 
-## Future work
+## Roadmap
 
-Roughly in order of how much they'd change day-to-day use.
+Ordered approximately by impact on day-to-day use.
 
-### Close the loops that are still open by hand
+### Closing the remaining manual loops
 
-- **Automatic polling.** `polish-tweet` has to be asked. A watcher that picks up
-  `Ready for AI Review` rows on its own would make the publishing pipeline
-  self-feeding — you'd drop a rough note in Notion and find a draft waiting.
-- **Scheduling.** Posting is manual and gated on `Scheduled Time`. The cron and
-  auto-spacing logic were deliberately removed once, so any return should be
-  opt-in and still respect the one-post-per-run safety cap.
-- **Best time to post.** Once `fetch_metrics.py` has accumulated a few months of
-  history, engagement rate by hour-of-day becomes answerable from your own data
-  rather than from generic advice. Blocked on history, not on code.
+- **Automatic polling.** `polish-tweet` currently must be invoked explicitly. A
+  watcher that picks up `Ready for AI Review` rows would make the publishing
+  pipeline self-feeding: drop a rough note into Notion, return to a finished
+  draft.
+- **Scheduling.** Publishing is manual. Cron and auto-spacing logic were
+  deliberately removed once already, so any reintroduction should be opt-in and
+  must preserve the one-post-per-run safety cap.
+- **Optimal posting times.** Once `fetch_metrics.py` has accumulated sufficient
+  history, engagement rate by hour of day becomes answerable from your own data
+  rather than from general advice. Blocked on data volume, not implementation.
 
-### Make the feedback loop sharper
+### Strengthening the feedback loop
 
-- **Reply performance.** Replies you send are now voice exemplars, but nothing
-  measures whether they landed. Replies are your own tweets, so their metrics are
-  fetchable — it needs the reply's tweet id, which means either capturing it when
-  you reply or matching text back to your timeline.
-- **What actually distinguishes a winner.** With enough metrics history, the
-  interesting question stops being "which posts did well" and becomes "what do
-  the winners have in common" — length, hook shape, time, topic, thread vs single.
-  That analysis would sharpen `polish-tweet` far more than more exemplars would.
-- **Thread vs single-post comparison.** The corpus tags `post_type`, and metrics
-  are per-post, so this is mostly a reporting question waiting on data.
+- **Reply performance.** Sent replies are now voice exemplars, but nothing
+  measures their reception. Replies are your own posts, so their metrics are
+  retrievable; this requires capturing the reply's tweet ID, either at reply time
+  or by matching text against your timeline.
+- **Characterising successful posts.** With sufficient metric history, the useful
+  question shifts from which posts performed well to what the successful ones have
+  in common: length, opening structure, timing, topic, thread versus single post.
+  That analysis would improve drafting more than additional exemplars would.
+- **Thread versus single-post comparison.** The corpus already records
+  `post_type` and metrics are per-post, so this is primarily a reporting question
+  awaiting data.
 
-### Extend the graph
+### Platform expansion
 
-- **LinkedIn** (`linkedin-req.md` exists but is empty). The shape should port
-  cleanly — discovery, voice corpus, review gates — but LinkedIn's API is far more
-  restrictive about posting and reading, so that needs verifying before designing.
-  Worth reusing the corpus concept while keeping voice *separate*: LinkedIn voice
-  and X voice are legitimately different registers.
-- **Cross-post adaptation.** Once a second platform exists: take one idea and
-  render it correctly for each, rather than copy-pasting the same text.
+- **LinkedIn.** `linkedin-req.md` exists but is currently empty. The overall
+  structure should port cleanly (discovery, voice corpus, review gates), but
+  LinkedIn's API is considerably more restrictive regarding both reading and
+  posting, so feasibility needs verification before design. The corpus concept
+  should be reused while keeping voice separate: LinkedIn and X are legitimately
+  different registers.
+- **Cross-platform adaptation.** Once a second platform exists, render a single
+  idea appropriately for each rather than duplicating identical text.
 
-### Deferred in the original PRD, still deferred
+### Deferred in the original requirements
 
-- **Context graph** of who you've talked to and about what, so replies can
-  reference history. `x-req.md` cut this deliberately; it only becomes worthwhile
-  once the reply volume is high enough that you stop remembering context yourself.
-- **DM handling.** Cut by choice, and reasonable to keep cut — DMs are higher
-  stakes and lower volume than replies.
+- **Context graph** of prior conversations, allowing replies to reference
+  history. `x-req.md` cut this deliberately. It becomes worthwhile only once reply
+  volume exceeds what you can track yourself.
+- **Direct message handling.** Cut by choice, and reasonably kept cut: direct
+  messages carry higher stakes at lower volume than public replies.
 
-### Explicitly not planned
+### Explicitly out of scope
 
-- **Auto-liking, auto-replying, or posting without approval.** This is the one
-  design rule the whole system is built around, not a limitation to remove later.
-  Anything that removes the review gate makes the tool actively dangerous to the
-  account it's meant to grow.
-- **Vanity dashboards.** Follower charts are cheap to build and tell you nothing
-  you can act on. Engagement rate on specific posts already answers the useful
-  version of that question.
+- **Auto-liking, auto-replying, or publishing without approval.** This is the
+  design constraint the entire system is built around, not a limitation to be
+  removed later. Removing the review gate would make the tool actively hazardous
+  to the account it exists to grow.
+- **Follower-count dashboards.** Inexpensive to build and largely unactionable.
+  Per-post engagement rate already answers the useful form of that question.
