@@ -44,3 +44,17 @@ def get_response_calendar_db_id() -> str:
 
 def get_discovery_db_id() -> str:
     return _require_env("NOTION_DISCOVERY_DB_ID")
+
+
+def get_openai_api_key() -> str:
+    return _require_env("OPENAI_API_KEY")
+
+
+def get_openalex_mailto() -> str | None:
+    """Optional. Sending a contact address moves us to OpenAlex's polite pool."""
+    return os.environ.get("OPENALEX_MAILTO")
+
+
+def get_semantic_scholar_api_key() -> str | None:
+    """Optional. Without it Semantic Scholar rate-limits most requests."""
+    return os.environ.get("SEMANTIC_SCHOLAR_API_KEY")
