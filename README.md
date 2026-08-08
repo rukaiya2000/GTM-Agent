@@ -37,6 +37,7 @@ have since been overtaken by platform changes, which are noted inline below.
 - [Configuration](#configuration)
 - [Pipeline 1: Engagement](#pipeline-1-engagement)
 - [Pipeline 2: Publishing](#pipeline-2-publishing)
+- [Pipeline 3: Paper outreach](#pipeline-3-paper-outreach)
 - [The voice corpus](#the-voice-corpus)
 - [Project layout](#project-layout)
 - [Project status](#project-status)
@@ -177,6 +178,8 @@ curation, reply drafting.
 - X Premium, if you intend to publish long-form Articles
 - A Notion workspace, with an internal integration you can create
 - Claude Code, for the skill-based steps
+- An OpenAI API key, if you intend to use the paper-outreach pipeline
+- A Google Cloud OAuth client with the Gmail API enabled, if you intend to send outreach email
 
 ## Installation
 
@@ -193,11 +196,18 @@ Populate `.env` with the following:
 | Variable | Required for | How to obtain |
 |---|---|---|
 | `X_BEARER_TOKEN` | all read operations | X developer portal, app-only bearer token. Requires pay-per-use credits. |
-| `X_CLIENT_ID`, `X_CLIENT_SECRET` | publishing | Same app, under User authentication settings. Read and write, confidential client, callback `http://127.0.0.1:8765/callback` |
+| `X_CLIENT_ID`, `X_CLIENT_SECRET` | publishing, X DMs | Same app, under User authentication settings. Read and write, confidential client, callback `http://127.0.0.1:8765/callback`. DM sending additionally needs the `dm.write` scope. |
+| `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET` | outreach email | Google Cloud OAuth client (Desktop app type), Gmail API enabled |
 | `NOTION_API_TOKEN` | all Notion access | notion.so/my-integrations, then share the target page with the integration |
 | `NOTION_TWEET_DRAFTS_DB_ID` | publishing | Written automatically by `setup.py` |
 | `NOTION_RESPONSE_CALENDAR_DB_ID` | engagement | The Response Calendar database ID |
 | `NOTION_DISCOVERY_DB_ID` | account discovery | The Discovery Database ID |
+| `NOTION_PAPER_OUTREACH_DB_ID` | paper outreach | The Paper Outreach database ID (created by hand, see [Pipeline 3](#pipeline-3-paper-outreach)) |
+| `NOTION_PAPER_AUTHORS_DB_ID` | paper outreach | The Paper Authors database ID (created by hand, same section) |
+| `OPENAI_API_KEY` | paper outreach | Drafts blurbs and outreach messages. Everything else in the pipeline is required. |
+| `OPENAI_MODEL` | paper outreach | Optional, defaults to `gpt-4o-mini` |
+| `OPENALEX_MAILTO` | paper outreach | Optional, a contact address puts paper lookups on OpenAlex's faster polite pool |
+| `SEMANTIC_SCHOLAR_API_KEY` | paper outreach | Optional, but without one Semantic Scholar rate-limits nearly every request |
 
 `NOTION_API_TOKEN` is distinct from Claude Code's own Notion connection. The
 latter exists only inside a live chat session, whereas the posting scripts run
@@ -221,6 +231,12 @@ run a second time unless invoked with `--force-new-db`.
 `x_oauth_login.py` opens a browser for authorization, captures the redirect on
 `127.0.0.1:8765`, and stores a refreshable token in `x_oauth_token.json` (which is
 gitignored). Re-run it if that file is deleted or the refresh token is revoked.
+It also grants the `dm.write` scope, needed for `send_outreach.py` to send X DMs.
+
+`gmail_oauth_login.py` is the equivalent for outreach email: it captures the
+redirect on `127.0.0.1:8766` and stores a refreshable token in
+`gmail_oauth_token.json` (gitignored), scoped to `gmail.send` only. Only needed
+for the paper-outreach pipeline.
 
 ## Pipeline 1: Engagement
 
@@ -395,6 +411,73 @@ intervention.
 - **An Article draft created but not published.** The draft exists on X. The error
   message records the draft ID. Retrying would create a second draft.
 
+## Pipeline 3: Paper outreach
+
+A separate, Notion-only workflow for reaching out to research paper authors.
+It does not share the voice corpus or the review-gate machinery above; see
+`Req/paper-outreach.md` for the original feature idea, most of which (reply
+tracking, follow-ups, meeting scheduling) is not implemented — what exists
+today is discovery, drafting, and one-shot sending.
+
+### Setup
+
+Unlike the Tweet Drafts database, the two databases this pipeline needs are
+not created for you. In Notion, create:
+
+- **Paper Outreach**: `Paper Name` (title), `Paper link` (url), `Notes`
+  (text), `Status` (select: `New`, `Needs Review`, `Blurb Ready`), `Blurb`
+  (text)
+- **Paper Authors**: `Author` (title), `Paper` (relation to Paper Outreach),
+  `Role` (select: `Corresponding`, `Co-author`), `Affiliation` (text), `Email`
+  (email), `X Handle` (text), `LinkedIn` (url), `Selected` (checkbox),
+  `Send Via` (select: `Email`, `X`, `LinkedIn`), `Message` (text), `Status`
+  (select: `Needs Handles`, `Draft Ready`, `Needs Review`, `Message Drafted`,
+  `Sent`)
+
+Share both with your Notion integration, then set `NOTION_PAPER_OUTREACH_DB_ID`
+and `NOTION_PAPER_AUTHORS_DB_ID` in `.env`.
+
+### Running it
+
+Add a paper to the Paper Outreach database with a `Paper Name` and,
+ideally, a `Paper link` (arXiv, DOI, or title also works), then:
+
+```bash
+.venv/bin/python scripts/fetch_paper_authors.py               # run 1: resolve authors, fetch handles, draft the blurb
+.venv/bin/python scripts/fetch_paper_authors.py --all-authors  # fetch every author instead of just the top 5
+```
+
+This resolves the paper via OpenAlex (falling back to Semantic Scholar),
+stages its top authors — corresponding authors first, since author order
+itself is a signal — into Paper Authors, and writes a `Blurb` from the
+abstract plus your `Notes`. Emails are filled in only when the arXiv PDF
+itself states one; X handles come from a homepage on file or, failing that, a
+best-effort X search that is marked low-confidence and still needs a glance.
+Rows without a confirmed email or handle are left `Needs Handles` for you to
+fill in by hand.
+
+In Notion, check `Selected` on whoever you want to reach, set `Send Via`
+(`Email`/`X`/`LinkedIn`) per author, and edit the `Blurb` or write directly
+into `Message` if you want to change anything before it goes out. Then:
+
+```bash
+.venv/bin/python scripts/send_outreach.py                     # run 2: draft (if needed) and send
+```
+
+This drafts one message per channel (not per author) for anyone `Selected`
+with a `Send Via` set and no `Message` yet, pulling tone from your own
+previously `Sent` messages as few-shot examples. It then attempts to send:
+
+| Channel | Requires | Behaviour |
+|---|---|---|
+| Email | `gmail_oauth_login.py` run, `Email` on file | Sends via Gmail; `Status` becomes `Sent` |
+| X | `x_oauth_login.py` run with `dm.write`, `X Handle` on file | Sends a real DM; `Status` becomes `Sent` |
+| LinkedIn | — | No third-party send API exists; always drafts and prints for you to copy-paste, `Status` stays `Message Drafted` |
+
+A hand-written `Message` is always used as-is and never overwritten. Rows
+already `Sent` are skipped on re-run, so `send_outreach.py` is safe to run
+repeatedly as you fill in more authors.
+
 ## The voice corpus
 
 `voice_corpus.json` (gitignored) is the sole source of style exemplars for
@@ -459,6 +542,7 @@ Two constraints apply:
 - `voice_corpus.json`: style exemplars
 - `gtm_agent.db`: seen-set and user ID cache
 - `x_oauth_token.json`: publishing token
+- `gmail_oauth_token.json`: outreach email token
 
 **Library** (`src/gtm_agent/`)
 
@@ -474,6 +558,12 @@ Two constraints apply:
 | `harvest.py` | Account fetch, deduplication, ranking |
 | `posting.py` | Thread and Article parsing, validation, `post_row()` |
 | `voice_corpus.py` | Corpus load, save, append, and metric attachment |
+| `gmail_oauth.py` | OAuth 2.0 PKCE login and token refresh for Gmail |
+| `gmail_client.py` | Gmail API: sending outreach email |
+| `scholar.py` | Paper/author lookup via OpenAlex and Semantic Scholar |
+| `paper_pdf.py` | Corresponding-author emails parsed from a paper's own arXiv PDF |
+| `handle_search.py` | Best-effort X handle discovery for paper authors |
+| `outreach_llm.py` | OpenAI-backed blurb and outreach message drafting |
 
 **Scripts** (`scripts/`)
 
@@ -491,6 +581,9 @@ Two constraints apply:
 | `fetch_metrics.py` | Attach post analytics to corpus entries |
 | `sync_replies.py` | Add sent replies to the corpus |
 | `sync_posted.py` | Import X history into Notion for visibility |
+| `gmail_oauth_login.py` | One-time outreach-email authorization |
+| `fetch_paper_authors.py` | Resolve a paper's authors, handles, and blurb (paper-outreach run 1) |
+| `send_outreach.py` | Draft and send outreach messages (paper-outreach run 2) |
 
 **Skills** (`.claude/skills/`)
 
@@ -518,6 +611,8 @@ Implemented and offline-verified:
   Articles API, with both partial-failure paths handled
 - Corpus seeding, automatic growth on publication, performance metric attachment,
   and sent-reply ingestion
+- Paper-outreach author resolution, handle discovery, and blurb/message
+  drafting, with real sending over Gmail and X DM
 
 Known limitations:
 
@@ -528,6 +623,9 @@ Known limitations:
 | No scheduler | Publishing is manual, gated on `Scheduled Time`. |
 | Weak `sync_posted.py` deduplication | Matches on exact text rather than tweet ID, since the `Posted URL` property was removed. Avoids re-importing on every run. |
 | Articles require X Premium | A sparse `articles` bucket also means weak long-form voice matching until several are published. |
+| Paper-outreach reply tracking and follow-ups not implemented | `Req/paper-outreach.md`'s reply tracking, delayed follow-ups, and meeting scheduling are cut; today the pipeline stops once a message is sent. |
+| Paper Outreach/Paper Authors databases are hand-created | Unlike Tweet Drafts, `setup.py` does not provision them; see [Pipeline 3](#pipeline-3-paper-outreach). |
+| LinkedIn outreach send is a stub | No third-party LinkedIn send API exists, so it always drafts for manual copy-paste. |
 
 ## Roadmap
 
@@ -576,8 +674,10 @@ Ordered approximately by impact on day-to-day use.
 - **Context graph** of prior conversations, allowing replies to reference
   history. `x-req.md` cut this deliberately. It becomes worthwhile only once reply
   volume exceeds what you can track yourself.
-- **Direct message handling.** Cut by choice, and reasonably kept cut: direct
-  messages carry higher stakes at lower volume than public replies.
+- **Direct message handling for the engagement pipeline.** Cut by choice, and
+  reasonably kept cut: direct messages carry higher stakes at lower volume
+  than public replies. (X DM sending does now exist, but only as a one-shot
+  send within the separate [paper-outreach pipeline](#pipeline-3-paper-outreach).)
 
 ### Explicitly out of scope
 
