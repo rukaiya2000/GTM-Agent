@@ -110,9 +110,15 @@ class NotionClient:
             "Content-Type": "application/json",
         }
 
-    def query_database(self, database_id: str, filter_: dict | None = None) -> list[dict]:
+    def query_database(
+        self, database_id: str, filter_: dict | None = None, sorts: list[dict] | None = None
+    ) -> list[dict]:
         results: list[dict] = []
-        body: dict = {"filter": filter_} if filter_ else {}
+        body: dict = {}
+        if filter_:
+            body["filter"] = filter_
+        if sorts:
+            body["sorts"] = sorts
         cursor: str | None = None
 
         while True:
@@ -307,6 +313,123 @@ class NotionClient:
         )
         if not response.ok:
             raise NotionApiError(response.status_code, response.text)
+
+    # --- Paper outreach (papers awaiting author outreach) ---
+
+    def get_paper_outreach_rows(self, database_id: str, status: str | None = None) -> list[dict]:
+        filter_ = None
+        if status == "__empty__":
+            filter_ = {"property": "Status", "select": {"is_empty": True}}
+        elif status:
+            filter_ = {"property": "Status", "select": {"equals": status}}
+
+        rows = []
+        for page in self.query_database(database_id, filter_=filter_):
+            props = page["properties"]
+            rows.append(
+                {
+                    "id": page["id"],
+                    "name": _plain_text_title(props.get("Paper Name")),
+                    "link": _url_value(props.get("Paper link")),
+                    "notes": _plain_text(props.get("Notes")),
+                    "status": _select_name(props.get("Status")),
+                    "blurb": _plain_text(props.get("Blurb")),
+                }
+            )
+        return rows
+
+    def set_paper_status(self, page_id: str, status: str) -> None:
+        self.update_page(page_id, {"Status": {"select": {"name": status}}})
+
+    def set_paper_blurb(self, page_id: str, blurb: str) -> None:
+        self.update_page(page_id, {"Blurb": {"rich_text": [{"text": {"content": blurb[:2000]}}]}})
+
+    # --- Paper authors (one row per author, linked to a paper) ---
+
+    def create_paper_author_row(
+        self,
+        database_id: str,
+        paper_page_id: str,
+        name: str,
+        affiliation: str = "",
+        role: str = "Co-author",
+        email: str = "",
+        x_handle: str = "",
+        linkedin: str = "",
+        status: str = "Needs Handles",
+    ) -> str:
+        properties: dict = {
+            "Author": {"title": [{"text": {"content": name[:200]}}]},
+            "Paper": {"relation": [{"id": paper_page_id}]},
+            "Role": {"select": {"name": role}},
+            "Status": {"select": {"name": status}},
+        }
+        if affiliation:
+            properties["Affiliation"] = {"rich_text": [{"text": {"content": affiliation[:2000]}}]}
+        if email:
+            properties["Email"] = {"email": email}
+        if x_handle:
+            properties["X Handle"] = {"rich_text": [{"text": {"content": x_handle}}]}
+        if linkedin:
+            properties["LinkedIn"] = {"url": linkedin}
+
+        response = requests.post(
+            f"{BASE_URL}/pages",
+            headers=self._headers(),
+            json={"parent": {"database_id": database_id}, "properties": properties},
+        )
+        if not response.ok:
+            raise NotionApiError(response.status_code, response.text)
+        return response.json()["id"]
+
+    def get_paper_author_rows(self, database_id: str, paper_page_id: str | None = None) -> list[dict]:
+        filter_ = None
+        if paper_page_id:
+            filter_ = {"property": "Paper", "relation": {"contains": paper_page_id}}
+
+        rows = []
+        for page in self.query_database(database_id, filter_=filter_):
+            props = page["properties"]
+            rows.append(
+                {
+                    "id": page["id"],
+                    "name": _plain_text_title(props.get("Author")),
+                    "affiliation": _plain_text(props.get("Affiliation")),
+                    "role": _select_name(props.get("Role")),
+                    "email": (props.get("Email") or {}).get("email"),
+                    "x_handle": _plain_text(props.get("X Handle")),
+                    "linkedin": _url_value(props.get("LinkedIn")),
+                    "selected": _checkbox(props.get("Selected")),
+                    "send_via": _select_name(props.get("Send Via")),
+                    "message": _plain_text(props.get("Message")),
+                    "status": _select_name(props.get("Status")),
+                }
+            )
+        return rows
+
+    def get_sent_messages(self, database_id: str, limit: int = 5) -> list[str]:
+        """Most recently sent outreach messages — used as tone examples so new
+        drafts sound like what the user actually sends, not a generic default."""
+        pages = self.query_database(
+            database_id,
+            filter_={"property": "Status", "select": {"equals": "Sent"}},
+            sorts=[{"timestamp": "last_edited_time", "direction": "descending"}],
+        )
+        messages = []
+        for page in pages[:limit]:
+            text = _plain_text(page["properties"].get("Message"))
+            if text:
+                messages.append(text)
+        return messages
+
+    def set_author_message(self, page_id: str, message: str, status: str, send_via: str | None = None) -> None:
+        properties: dict = {
+            "Message": {"rich_text": [{"text": {"content": message[:2000]}}]},
+            "Status": {"select": {"name": status}},
+        }
+        if send_via:
+            properties["Send Via"] = {"select": {"name": send_via}}
+        self.update_page(page_id, properties)
 
     def update_page(self, page_id: str, properties: dict) -> None:
         response = requests.patch(

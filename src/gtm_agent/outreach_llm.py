@@ -54,29 +54,29 @@ def _chat(system: str, user: str, max_tokens: int) -> str:
         raise OutreachLLMError("The writing model returned an unexpected response.") from exc
 
 
-def author_brief(author: dict, paper: dict | None = None) -> str:
-    """Summarize a fetched author profile in two or three sentences."""
+TONE_INSTRUCTION = (
+    "previously_sent_messages, if present, are messages the sender has actually sent before — match "
+    "their tone, voice, and level of formality. Do not copy their content or claims, only the style."
+)
+
+
+def paper_blurb(paper: dict, notes: str = "", tone_examples: list[str] | None = None) -> str:
+    """Short blurb about a paper — the shared context every outreach message
+    to its authors builds on."""
     facts = {
-        "name": author.get("name"),
-        "affiliations": author.get("affiliations"),
-        "research_topics": author.get("topics"),
-        "papers_published": author.get("paperCount"),
-        "total_citations": author.get("citationCount"),
-        "h_index": author.get("hIndex"),
-        "most_cited_papers": [
-            {"title": item.get("title"), "year": item.get("year"), "citations": item.get("citationCount")}
-            for item in (author.get("recentPapers") or [])[:5]
-        ],
-        "paper_you_found_them_through": {"title": (paper or {}).get("title"), "year": (paper or {}).get("year")} if paper else None,
-        "affiliation_is_confirmed": author.get("matchedBy") != "name",
+        "title": paper.get("title"),
+        "year": paper.get("year"),
+        "abstract": paper.get("abstract"),
+        "topics": paper.get("topics"),
+        "your_notes_on_it": notes or None,
+        "previously_sent_messages": tone_examples or None,
     }
     return _chat(
         system=(
-            "You brief a researcher before they contact an academic author. "
-            "Write two or three sentences covering what this person works on, what their most cited "
-            "work is, and how established they are. The paper the user found them through is often "
-            "already in their list of papers, so do not describe it as a separate or newer work. "
-            "If affiliation_is_confirmed is false, say the affiliation is unconfirmed. " + GROUNDING_RULE
+            "Write a 2-4 sentence blurb about this paper for someone about to reach out to its "
+            "authors. Center it on your_notes_on_it if present, since that is the reader's own take "
+            "on what mattered — use the abstract only to fill in what the notes don't cover. "
+            f"Plain, specific, no marketing language. {TONE_INSTRUCTION} " + GROUNDING_RULE
         ),
         user=json.dumps(facts, ensure_ascii=False),
         max_tokens=220,
@@ -90,23 +90,25 @@ CHANNEL_GUIDANCE = {
 }
 
 
-def outreach_draft(*, contact: dict, paper: dict | None, channel: str, purpose: str, sender: str | None = None) -> str:
-    """Draft one outreach message from stored contact facts."""
+def outreach_message(
+    *, paper_blurb_text: str, channel: str, sender: str | None = None, tone_examples: list[str] | None = None
+) -> str:
+    """Draft one outreach message for a paper, grounded in the shared blurb.
+    Not personalized per recipient — the same message is reused for every
+    selected author on a given channel."""
     facts = {
-        "recipient_name": contact.get("name"),
-        "recipient_affiliation": contact.get("affiliation"),
-        "recipient_research_topics": contact.get("topics"),
-        "their_paper": {"title": (paper or {}).get("title"), "year": (paper or {}).get("year")} if paper else None,
-        "what_you_know_about_them": contact.get("relationship_summary"),
-        "your_reason_for_reaching_out": purpose,
+        "paper_blurb": paper_blurb_text,
         "about_the_sender": sender,
+        "previously_sent_messages": tone_examples or None,
     }
     return _chat(
         system=(
-            f"You write outreach to academic researchers on behalf of the sender. {CHANNEL_GUIDANCE.get(channel, CHANNEL_GUIDANCE['Email'])} "
-            "Reference their specific work, state the ask once, and close with a low-friction question. "
-            "Do not flatter, do not claim to have read work that is not listed, and do not promise anything. "
-            "Return the message only, with no commentary. " + GROUNDING_RULE
+            f"You write outreach to an academic paper's authors on behalf of the sender. "
+            f"{CHANNEL_GUIDANCE.get(channel, CHANNEL_GUIDANCE['Email'])} "
+            "Ground the message in paper_blurb. Write it generically enough to send to any of the "
+            "paper's authors as-is — do not address a specific person by name. State genuine interest, "
+            f"ask one low-friction question, and do not promise anything. Return the message only, with "
+            f"no commentary. {TONE_INSTRUCTION} " + GROUNDING_RULE
         ),
         user=json.dumps(facts, ensure_ascii=False),
         max_tokens=400,

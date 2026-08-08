@@ -46,6 +46,14 @@ def get_discovery_db_id() -> str:
     return _require_env("NOTION_DISCOVERY_DB_ID")
 
 
+def get_paper_outreach_db_id() -> str:
+    return _require_env("NOTION_PAPER_OUTREACH_DB_ID")
+
+
+def get_paper_authors_db_id() -> str:
+    return _require_env("NOTION_PAPER_AUTHORS_DB_ID")
+
+
 def get_openai_api_key() -> str:
     return _require_env("OPENAI_API_KEY")
 
