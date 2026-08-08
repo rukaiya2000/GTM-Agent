@@ -13,38 +13,89 @@ already wrote/edited a Message by hand, that's used as-is and never
 overwritten. Drafts pull tone from your own already-sent messages as
 few-shot examples, so they converge toward your voice over time.
 
-Then attempts to actually send. Right now no channel is wired up to a real
-send API yet (see attempt_send below) — Email needs Gmail credentials,
-X needs a dm.write-scoped OAuth token, and LinkedIn has no send API at all,
-ever. Until those exist, everything drafts and prints for you to copy-paste,
-and Status stays "Message Drafted" rather than "Sent".
+Then attempts to actually send. X sends a real DM if a valid OAuth token
+(dm.write scope — run x_oauth_login.py after pulling this change) and the
+author's X Handle are both available. Email sends via Gmail if a valid OAuth
+token (run gmail_oauth_login.py) and the author's Email are both available.
+LinkedIn is still a stub — it has no third-party send API at all, ever, so
+it always drafts and prints for you to copy-paste, and Status stays
+"Message Drafted" rather than "Sent".
 
     python scripts/send_outreach.py
 """
 
-from gtm_agent.config import ConfigError, get_paper_authors_db_id, get_paper_outreach_db_id
+from gtm_agent.config import (
+    ConfigError,
+    get_gmail_client_id,
+    get_gmail_client_secret,
+    get_paper_authors_db_id,
+    get_paper_outreach_db_id,
+    get_x_client_id,
+    get_x_client_secret,
+)
+from gtm_agent.gmail_client import GmailApiError, send_email
+from gtm_agent.gmail_oauth import get_valid_access_token as get_valid_gmail_token
 from gtm_agent.notion_client import NotionApiError, NotionClient
 from gtm_agent.outreach_llm import OutreachLLMError, outreach_message
+from gtm_agent.x_client import XApiError, send_dm
+from gtm_agent.x_oauth import get_valid_access_token as get_valid_x_token
 
 READY_STATUSES = ("Needs Review", "Blurb Ready")
 
 
-def attempt_send(channel: str, message: str) -> tuple[bool, str]:
-    """Returns (sent, note). Nothing actually sends yet for any channel:
-    Email needs Gmail credentials + a send function, X needs a
-    dm.write-scoped OAuth token + a send function, LinkedIn has no
-    third-party send API at all. Swap in a real call here per channel once
-    those exist — the rest of the pipeline already expects this shape."""
+def get_x_access_token() -> str | None:
+    """None if X isn't connected — callers fall back to drafting only."""
+    try:
+        return get_valid_x_token(get_x_client_id(), get_x_client_secret())
+    except ConfigError:
+        return None
+
+
+def get_gmail_access_token() -> str | None:
+    """None if Gmail isn't connected — callers fall back to drafting only."""
+    try:
+        return get_valid_gmail_token(get_gmail_client_id(), get_gmail_client_secret())
+    except ConfigError:
+        return None
+
+
+def attempt_send(
+    channel: str, message: str, email: str, x_handle: str, x_access_token: str | None, gmail_access_token: str | None
+) -> tuple[bool, str]:
+    """Returns (sent, note)."""
     if channel == "Email":
-        return False, "Gmail isn't connected yet — copy the message above and send it yourself."
+        if not gmail_access_token:
+            return False, "Gmail isn't connected yet (run gmail_oauth_login.py) — copy the message above and send it yourself."
+        if not email:
+            return False, "No Email on file for this author — copy the message above and send it yourself."
+        try:
+            send_email(email, message, gmail_access_token)
+        except GmailApiError as e:
+            return False, f"Gmail send failed ({e}) — copy the message above and send it yourself."
+        return True, f"Sent via Gmail to {email}."
     if channel == "X":
-        return False, "X DM sending isn't connected yet — copy the message above and send it yourself."
+        if not x_access_token:
+            return False, "X isn't connected yet (run x_oauth_login.py) — copy the message above and send it yourself."
+        if not x_handle:
+            return False, "No X Handle on file for this author — copy the message above and send it yourself."
+        try:
+            send_dm(x_handle, message, x_access_token)
+        except XApiError as e:
+            return False, f"X send failed ({e}) — copy the message above and send it yourself."
+        return True, f"Sent via X DM to {x_handle}."
     if channel == "LinkedIn":
         return False, "LinkedIn has no send API — copy the message above and send it yourself."
     return False, f"Unknown channel {channel!r}."
 
 
-def send_for_paper(notion: NotionClient, authors_db_id: str, paper_row: dict, tone_examples: list[str]) -> None:
+def send_for_paper(
+    notion: NotionClient,
+    authors_db_id: str,
+    paper_row: dict,
+    tone_examples: list[str],
+    x_access_token: str | None,
+    gmail_access_token: str | None,
+) -> None:
     if not paper_row["blurb"]:
         print("  No Blurb yet — run fetch_paper_authors.py first.")
         return
@@ -71,9 +122,14 @@ def send_for_paper(notion: NotionClient, authors_db_id: str, paper_row: dict, to
             a["message"] = message  # so the send step below sees it without a re-fetch
 
     for author in selected:
+        if author["status"] == "Sent":
+            continue  # already sent — never resend on a re-run
         if not author["message"]:
             continue  # drafting failed above, already reported
-        sent, note = attempt_send(author["send_via"], author["message"])
+        sent, note = attempt_send(
+            author["send_via"], author["message"], author["email"] or "", author["x_handle"],
+            x_access_token, gmail_access_token,
+        )
         status = "Sent" if sent else "Message Drafted"
         notion.set_author_message(author["id"], author["message"], status=status)
         print(f"  {author['name']} ({author['send_via']}, {status}):\n    {author['message']}\n    -> {note}\n")
@@ -104,9 +160,17 @@ def main() -> int:
     if not tone_examples:
         print("(no Sent messages yet to draw tone from — drafts will be plain until you've sent a few)\n")
 
+    x_access_token = get_x_access_token()
+    if not x_access_token:
+        print("(X not connected — run scripts/x_oauth_login.py to enable real DM sending)\n")
+
+    gmail_access_token = get_gmail_access_token()
+    if not gmail_access_token:
+        print("(Gmail not connected — run scripts/gmail_oauth_login.py to enable real email sending)\n")
+
     for paper_row in papers:
         print(f"\n{paper_row['name']}")
-        send_for_paper(notion, authors_db_id, paper_row, tone_examples)
+        send_for_paper(notion, authors_db_id, paper_row, tone_examples, x_access_token, gmail_access_token)
 
     print("\nDone.")
     return 0

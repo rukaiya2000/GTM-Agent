@@ -192,6 +192,20 @@ def post_tweet(
     return _post("/tweets", access_token, body)
 
 
+def send_dm(username: str, text: str, access_token: str, bearer_token: str | None = None) -> dict:
+    """Send a direct message to an X user by @handle.
+
+    The DM endpoint needs a numeric user id, not a handle, so this resolves
+    it first via a read call (app-only bearer token), then sends via the
+    user-context OAuth token — requires the dm.write scope, added to
+    x_oauth.SCOPES; re-run x_oauth_login.py if your saved token predates
+    that."""
+    lookup = XClient(bearer_token)
+    user = lookup.get_user_by_username(username.lstrip("@"))
+    participant_id = user["data"]["id"]
+    return _post(f"/dm_conversations/with/{participant_id}/messages", access_token, {"text": text})
+
+
 class ThreadPostError(RuntimeError):
     """Raised when a thread fails partway through. posted_tweet_ids holds the
     IDs of tweets that DID succeed before the failure — those are live on X and

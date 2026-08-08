@@ -30,6 +30,14 @@ def get_x_client_secret() -> str:
     return _require_env("X_CLIENT_SECRET")
 
 
+def get_gmail_client_id() -> str:
+    return _require_env("GMAIL_CLIENT_ID")
+
+
+def get_gmail_client_secret() -> str:
+    return _require_env("GMAIL_CLIENT_SECRET")
+
+
 def get_notion_token() -> str:
     return _require_env("NOTION_API_TOKEN")
 
