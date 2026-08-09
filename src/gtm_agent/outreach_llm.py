@@ -113,3 +113,39 @@ def outreach_message(
         user=json.dumps(facts, ensure_ascii=False),
         max_tokens=400,
     )
+
+
+FOLLOWUP_CHANNEL_GUIDANCE = {
+    "Email": "A short follow-up email replying in the same thread. No subject line, body only. Under 60 words.",
+    "X": "A short follow-up direct message on X. Under 200 characters.",
+}
+
+
+def followup_message(
+    *, previous_message: str, channel: str, followup_number: int, tone_examples: list[str] | None = None
+) -> str:
+    """A brief nudge referencing a message that got no reply. Never restates
+    the original pitch in full. `followup_number` 2 (the last one, per
+    send_followups.py's two-follow-up cap) is written even shorter and gives
+    the reader an easy out, since two silences is a stronger signal than one."""
+    facts = {
+        "previous_message_sent": previous_message,
+        "which_followup": f"{followup_number} of 2",
+        "previously_sent_messages": tone_examples or None,
+    }
+    tone_note = (
+        "This is the final follow-up — keep it especially brief and give the reader an easy out, "
+        "e.g. 'no worries if now isn't a good time'."
+        if followup_number >= 2
+        else "Keep it brief and low-pressure."
+    )
+    return _chat(
+        system=(
+            "You write a brief follow-up to a message that got no reply on behalf of the sender. "
+            f"{FOLLOWUP_CHANNEL_GUIDANCE.get(channel, FOLLOWUP_CHANNEL_GUIDANCE['Email'])} "
+            f"Reference previous_message_sent briefly rather than restating the full pitch. {tone_note} "
+            f"Return the message only, with no commentary. {TONE_INSTRUCTION} " + GROUNDING_RULE
+        ),
+        user=json.dumps(facts, ensure_ascii=False),
+        max_tokens=180,
+    )

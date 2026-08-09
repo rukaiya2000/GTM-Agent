@@ -13,7 +13,9 @@ from gtm_agent.config import ConfigError
 AUTHORIZE_URL = "https://x.com/i/oauth2/authorize"
 TOKEN_URL = "https://api.x.com/2/oauth2/token"
 REDIRECT_URI = "http://127.0.0.1:8765/callback"
-SCOPES = "tweet.read tweet.write dm.write users.read offline.access"
+# dm.read: checking a DM conversation for a reply before sending a follow-up
+# (scripts/send_followups.py).
+SCOPES = "tweet.read tweet.write dm.write dm.read users.read offline.access"
 TOKEN_PATH = Path("x_oauth_token.json")
 
 # Refresh this many seconds before actual expiry, to avoid using a token

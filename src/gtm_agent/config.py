@@ -74,3 +74,12 @@ def get_openalex_mailto() -> str | None:
 def get_semantic_scholar_api_key() -> str | None:
     """Optional. Without it Semantic Scholar rate-limits most requests."""
     return os.environ.get("SEMANTIC_SCHOLAR_API_KEY")
+
+
+def get_followup1_days() -> int:
+    return int(os.environ.get("OUTREACH_FOLLOWUP1_DAYS", "6"))
+
+
+def get_followup2_days() -> int:
+    """Days after follow-up 1 was sent, not after the initial message."""
+    return int(os.environ.get("OUTREACH_FOLLOWUP2_DAYS", "10"))

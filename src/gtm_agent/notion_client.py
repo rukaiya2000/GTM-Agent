@@ -403,6 +403,9 @@ class NotionClient:
                     "send_via": _select_name(props.get("Send Via")),
                     "message": _plain_text(props.get("Message")),
                     "status": _select_name(props.get("Status")),
+                    "first_sent": _date_start(props.get("First Sent")),
+                    "last_sent": _date_start(props.get("Last Sent")),
+                    "thread_ref": _plain_text(props.get("Thread Ref")),
                 }
             )
         return rows
@@ -430,6 +433,34 @@ class NotionClient:
         if send_via:
             properties["Send Via"] = {"select": {"name": send_via}}
         self.update_page(page_id, properties)
+
+    # --- Follow-ups (send_followups.py) ---
+
+    def record_initial_send(self, page_id: str, thread_ref: str | None, sent_date: str) -> None:
+        """Called once, right after the initial message actually sends.
+        `thread_ref` is the Gmail thread id for Email (used to reply within
+        the same thread and to check it for a reply); left unset for X, since
+        the participant id is cheap to re-resolve from the handle on demand."""
+        properties: dict = {
+            "First Sent": {"date": {"start": sent_date}},
+            "Last Sent": {"date": {"start": sent_date}},
+        }
+        if thread_ref:
+            properties["Thread Ref"] = {"rich_text": [{"text": {"content": thread_ref[:2000]}}]}
+        self.update_page(page_id, properties)
+
+    def record_followup(self, page_id: str, followup_number: int, message: str, status: str, sent_date: str) -> None:
+        self.update_page(
+            page_id,
+            {
+                f"Followup {followup_number} Message": {"rich_text": [{"text": {"content": message[:2000]}}]},
+                "Status": {"select": {"name": status}},
+                "Last Sent": {"date": {"start": sent_date}},
+            },
+        )
+
+    def set_author_status(self, page_id: str, status: str) -> None:
+        self.update_page(page_id, {"Status": {"select": {"name": status}}})
 
     def update_page(self, page_id: str, properties: dict) -> None:
         response = requests.patch(

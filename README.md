@@ -208,6 +208,7 @@ Populate `.env` with the following:
 | `OPENAI_MODEL` | paper outreach | Optional, defaults to `gpt-4o-mini` |
 | `OPENALEX_MAILTO` | paper outreach | Optional, a contact address puts paper lookups on OpenAlex's faster polite pool |
 | `SEMANTIC_SCHOLAR_API_KEY` | paper outreach | Optional, but without one Semantic Scholar rate-limits nearly every request |
+| `OUTREACH_FOLLOWUP1_DAYS`, `OUTREACH_FOLLOWUP2_DAYS` | paper outreach follow-ups | Optional, default 6 and 10. See [Following up](#following-up) |
 
 `NOTION_API_TOKEN` is distinct from Claude Code's own Notion connection. The
 latter exists only inside a live chat session, whereas the posting scripts run
@@ -415,9 +416,9 @@ intervention.
 
 A separate, Notion-only workflow for reaching out to research paper authors.
 It does not share the voice corpus or the review-gate machinery above; see
-`Req/paper-outreach.md` for the original feature idea, most of which (reply
-tracking, follow-ups, meeting scheduling) is not implemented — what exists
-today is discovery, drafting, and one-shot sending.
+`Req/paper-outreach.md` for the original feature idea. Discovery, drafting,
+sending, reply detection, and a two-step follow-up cadence are implemented;
+meeting scheduling and calendar sync are not.
 
 ### Setup
 
@@ -432,7 +433,13 @@ not created for you. In Notion, create:
   (email), `X Handle` (text), `LinkedIn` (url), `Selected` (checkbox),
   `Send Via` (select: `Email`, `X`, `LinkedIn`), `Message` (text), `Status`
   (select: `Needs Handles`, `Draft Ready`, `Needs Review`, `Message Drafted`,
-  `Sent`)
+  `Sent`, `Followup 1 Sent`, `Followup 2 Sent`, `Replied`), `First Sent`
+  (date), `Last Sent` (date), `Thread Ref` (text), `Followup 1 Message`
+  (text), `Followup 2 Message` (text)
+
+The last five Paper Authors fields (`First Sent` through `Followup 2
+Message`) are only used by the follow-up cadence described below — skip them
+if you only intend to send a single message per author by hand.
 
 Share both with your Notion integration, then set `NOTION_PAPER_OUTREACH_DB_ID`
 and `NOTION_PAPER_AUTHORS_DB_ID` in `.env`.
@@ -476,7 +483,47 @@ previously `Sent` messages as few-shot examples. It then attempts to send:
 
 A hand-written `Message` is always used as-is and never overwritten. Rows
 already `Sent` are skipped on re-run, so `send_outreach.py` is safe to run
-repeatedly as you fill in more authors.
+repeatedly as you fill in more authors. A successful Email or X send also
+records `First Sent`/`Last Sent` and, for Email, the Gmail thread id — what
+the follow-up run below needs to check for a reply and, if there isn't one,
+reply in the same thread.
+
+### Following up
+
+```bash
+.venv/bin/python scripts/send_followups.py             # run 3: check replies, send due follow-ups
+.venv/bin/python scripts/send_followups.py --dry-run   # preview without sending or updating Notion
+```
+
+Run this regularly (by hand, or on a schedule you set up yourself — there is
+no built-in cron, consistent with the rest of this project). Each run, for
+every Email/X author in `Status` `Sent`, `Followup 1 Sent`, or `Followup 2
+Sent`:
+
+1. **Checks for a reply first**, regardless of timing. If found, `Status`
+   becomes `Replied` and that author is never messaged again by this
+   pipeline.
+2. Otherwise, if enough time has passed since the last message, drafts and
+   sends the next follow-up — a short nudge, not a re-pitch — via
+   `outreach_llm.followup_message()`, using the same `Sent`-message tone
+   examples as the initial send.
+
+| Follow-up | Fires after | Configurable via |
+|---|---|---|
+| 1 | `OUTREACH_FOLLOWUP1_DAYS` (default 6) since the initial message | `.env` |
+| 2 | `OUTREACH_FOLLOWUP2_DAYS` (default 10) since Follow-up 1, not since the initial message | `.env` |
+
+After Follow-up 2, the script keeps checking for a reply on later runs but
+never sends a third message.
+
+Reply detection needs read access this pipeline didn't previously require:
+Email checks the Gmail thread for a message from anyone but you (`gmail.readonly`
+scope), X checks the DM conversation for a message from the other participant
+(`dm.read` scope). Both scopes were added to the existing OAuth flows — if your
+`gmail_oauth_token.json` or `x_oauth_token.json` predates this feature, re-run
+`gmail_oauth_login.py` / `x_oauth_login.py` to pick them up. LinkedIn has
+neither a send nor a read API, so those rows are left alone; check replies
+there yourself.
 
 ## The voice corpus
 
@@ -584,6 +631,7 @@ Two constraints apply:
 | `gmail_oauth_login.py` | One-time outreach-email authorization |
 | `fetch_paper_authors.py` | Resolve a paper's authors, handles, and blurb (paper-outreach run 1) |
 | `send_outreach.py` | Draft and send outreach messages (paper-outreach run 2) |
+| `send_followups.py` | Check for replies, send due follow-ups (paper-outreach run 3, run repeatedly) |
 
 **Skills** (`.claude/skills/`)
 
@@ -613,6 +661,7 @@ Implemented and offline-verified:
   and sent-reply ingestion
 - Paper-outreach author resolution, handle discovery, and blurb/message
   drafting, with real sending over Gmail and X DM
+- Paper-outreach reply detection and a two-follow-up cadence, both configurable
 
 Known limitations:
 
@@ -623,9 +672,9 @@ Known limitations:
 | No scheduler | Publishing is manual, gated on `Scheduled Time`. |
 | Weak `sync_posted.py` deduplication | Matches on exact text rather than tweet ID, since the `Posted URL` property was removed. Avoids re-importing on every run. |
 | Articles require X Premium | A sparse `articles` bucket also means weak long-form voice matching until several are published. |
-| Paper-outreach reply tracking and follow-ups not implemented | `Req/paper-outreach.md`'s reply tracking, delayed follow-ups, and meeting scheduling are cut; today the pipeline stops once a message is sent. |
+| Paper-outreach follow-ups are capped at two | Matches the requested cadence; nothing is sent after Follow-up 2 goes unanswered, and meeting scheduling/calendar sync from `Req/paper-outreach.md` remain unimplemented. |
 | Paper Outreach/Paper Authors databases are hand-created | Unlike Tweet Drafts, `setup.py` does not provision them; see [Pipeline 3](#pipeline-3-paper-outreach). |
-| LinkedIn outreach send is a stub | No third-party LinkedIn send API exists, so it always drafts for manual copy-paste. |
+| LinkedIn outreach send and reply tracking are stubs | No third-party LinkedIn API exists for either, so those rows always draft for manual copy-paste and are excluded from `send_followups.py`. |
 
 ## Roadmap
 

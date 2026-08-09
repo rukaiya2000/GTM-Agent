@@ -21,8 +21,14 @@ LinkedIn is still a stub — it has no third-party send API at all, ever, so
 it always drafts and prints for you to copy-paste, and Status stays
 "Message Drafted" rather than "Sent".
 
+For Email and X, a successful send also records First Sent/Last Sent and (for
+Email) the Gmail thread id, which is what send_followups.py uses afterwards to
+check for a reply and, if there isn't one, send up to two follow-ups.
+
     python scripts/send_outreach.py
 """
+
+from datetime import date
 
 from gtm_agent.config import (
     ConfigError,
@@ -61,31 +67,33 @@ def get_gmail_access_token() -> str | None:
 
 def attempt_send(
     channel: str, message: str, email: str, x_handle: str, x_access_token: str | None, gmail_access_token: str | None
-) -> tuple[bool, str]:
-    """Returns (sent, note)."""
+) -> tuple[bool, str, str | None]:
+    """Returns (sent, note, thread_ref). thread_ref is the Gmail thread id for
+    Email sends (needed by send_followups.py to reply in-thread and check for
+    a reply); None otherwise."""
     if channel == "Email":
         if not gmail_access_token:
-            return False, "Gmail isn't connected yet (run gmail_oauth_login.py) — copy the message above and send it yourself."
+            return False, "Gmail isn't connected yet (run gmail_oauth_login.py) — copy the message above and send it yourself.", None
         if not email:
-            return False, "No Email on file for this author — copy the message above and send it yourself."
+            return False, "No Email on file for this author — copy the message above and send it yourself.", None
         try:
-            send_email(email, message, gmail_access_token)
+            result = send_email(email, message, gmail_access_token)
         except GmailApiError as e:
-            return False, f"Gmail send failed ({e}) — copy the message above and send it yourself."
-        return True, f"Sent via Gmail to {email}."
+            return False, f"Gmail send failed ({e}) — copy the message above and send it yourself.", None
+        return True, f"Sent via Gmail to {email}.", result.get("threadId")
     if channel == "X":
         if not x_access_token:
-            return False, "X isn't connected yet (run x_oauth_login.py) — copy the message above and send it yourself."
+            return False, "X isn't connected yet (run x_oauth_login.py) — copy the message above and send it yourself.", None
         if not x_handle:
-            return False, "No X Handle on file for this author — copy the message above and send it yourself."
+            return False, "No X Handle on file for this author — copy the message above and send it yourself.", None
         try:
             send_dm(x_handle, message, x_access_token)
         except XApiError as e:
-            return False, f"X send failed ({e}) — copy the message above and send it yourself."
-        return True, f"Sent via X DM to {x_handle}."
+            return False, f"X send failed ({e}) — copy the message above and send it yourself.", None
+        return True, f"Sent via X DM to {x_handle}.", None
     if channel == "LinkedIn":
-        return False, "LinkedIn has no send API — copy the message above and send it yourself."
-    return False, f"Unknown channel {channel!r}."
+        return False, "LinkedIn has no send API — copy the message above and send it yourself.", None
+    return False, f"Unknown channel {channel!r}.", None
 
 
 def send_for_paper(
@@ -126,12 +134,14 @@ def send_for_paper(
             continue  # already sent — never resend on a re-run
         if not author["message"]:
             continue  # drafting failed above, already reported
-        sent, note = attempt_send(
+        sent, note, thread_ref = attempt_send(
             author["send_via"], author["message"], author["email"] or "", author["x_handle"],
             x_access_token, gmail_access_token,
         )
         status = "Sent" if sent else "Message Drafted"
         notion.set_author_message(author["id"], author["message"], status=status)
+        if sent:
+            notion.record_initial_send(author["id"], thread_ref, date.today().isoformat())
         print(f"  {author['name']} ({author['send_via']}, {status}):\n    {author['message']}\n    -> {note}\n")
 
 

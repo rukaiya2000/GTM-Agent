@@ -13,8 +13,10 @@ from gtm_agent.config import ConfigError
 AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 REDIRECT_URI = "http://127.0.0.1:8766/callback"
-# gmail.send only — this app never needs to read a mailbox, just send from it.
-SCOPES = "https://www.googleapis.com/auth/gmail.send"
+# send: outreach email. readonly: checking a thread for a reply before
+# sending a follow-up (scripts/send_followups.py) — never used to read
+# unrelated mail, only threads this app itself started.
+SCOPES = "https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly"
 TOKEN_PATH = Path("gmail_oauth_token.json")
 
 EXPIRY_BUFFER_SECONDS = 120

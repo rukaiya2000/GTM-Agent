@@ -200,10 +200,44 @@ def send_dm(username: str, text: str, access_token: str, bearer_token: str | Non
     user-context OAuth token — requires the dm.write scope, added to
     x_oauth.SCOPES; re-run x_oauth_login.py if your saved token predates
     that."""
-    lookup = XClient(bearer_token)
-    user = lookup.get_user_by_username(username.lstrip("@"))
-    participant_id = user["data"]["id"]
+    participant_id = resolve_participant_id(XClient(bearer_token), username)
     return _post(f"/dm_conversations/with/{participant_id}/messages", access_token, {"text": text})
+
+
+def resolve_participant_id(client: "XClient", username: str) -> str | None:
+    try:
+        user = client.get_user_by_username(username.lstrip("@"))
+    except XApiError:
+        return None
+    return (user.get("data") or {}).get("id")
+
+
+def get_authenticated_user_id(access_token: str) -> str:
+    """The sending account's own numeric user id — needed to tell our own
+    sent DMs apart from a reply when checking a conversation."""
+    response = requests.get(f"{BASE_URL}/users/me", headers={"Authorization": f"Bearer {access_token}"})
+    if response.status_code == 401:
+        raise XApiError(401, "unauthorized — X OAuth token missing/expired/invalid")
+    if not response.ok:
+        raise XApiError(response.status_code, response.text)
+    return response.json()["data"]["id"]
+
+
+def conversation_has_reply(participant_id: str, own_user_id: str, access_token: str) -> bool:
+    """True if the DM conversation with this participant contains a message
+    from them. Requires the dm.read scope — re-run x_oauth_login.py if your
+    saved token predates it."""
+    response = requests.get(
+        f"{BASE_URL}/dm_conversations/with/{participant_id}/dm_events",
+        headers={"Authorization": f"Bearer {access_token}"},
+        params={"max_results": 20, "dm_event.fields": "sender_id"},
+    )
+    if response.status_code == 401:
+        raise XApiError(401, "unauthorized — X OAuth token missing/expired/invalid (dm.read scope required)")
+    if not response.ok:
+        raise XApiError(response.status_code, response.text)
+    events = response.json().get("data", [])
+    return any(e.get("sender_id") == participant_id for e in events)
 
 
 class ThreadPostError(RuntimeError):
