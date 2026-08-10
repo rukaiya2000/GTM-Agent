@@ -297,24 +297,22 @@ drafting are two phases of the same skill; each can also be invoked on its own �
 "clean up my calendar" curates without fetching, "draft replies" drafts for rows
 already staged.)
 
-**Important:** the Response Calendar carries the workflow and the learning
-signal in two different properties. Notion matches property names exactly, so
-confusing them fails silently.
+**Important:** `Status` is the Response Calendar's single lifecycle column:
 
-| Property | Values | Written by |
+| Value | Meaning | Set by |
 |---|---|---|
-| `Status` | `New`, `Reviewed`, `Ready to post`, `Stale`, `Rejected (irrelevant)`, `Rejected (IDK what to say)` | the pipeline (and you, for `Ready to post`) |
-| `Posted` (checkbox) | ticked when you actually replied | you only |
-| `Keep?` (checkbox) | ticked when a post is worth keeping | you only |
+| `New` | freshly staged by discovery | the pipeline |
+| `Reviewed` | curated, worth your time | the skill or you |
+| `Ready to post` | reply finalized, ready to send | you (or the skill, on your ask) |
+| `Posted` | you actually replied on X | **you only** |
+| `Stale` / `Rejected (irrelevant)` / `Rejected (IDK what to say)` | exits | the skill or you |
 
-`Posted` is the learning signal: ticked is positive evidence, `Keep?` a weaker
-positive, `Status = Rejected (…)` is negative, and everything else is
-explicitly neutral — no reply occurred, but the content was not necessarily
-unsuitable. The skill reads these and never writes them; writing them would
-corrupt the signal it depends on. The row also carries `Draft` — the final
-message to post, seeded by the skill with its recommended reply and finalized
-by you — and `Added Date`, when the row entered the calendar (`Original Tweet
-Date` records when the post itself was tweeted).
+`Posted` doubles as the learning signal: it is positive evidence, the
+`Rejected (…)` values are negative, and everything else is explicitly
+neutral — no reply occurred, but the content was not necessarily unsuitable.
+The skill never sets `Posted`; doing so would corrupt the signal it depends
+on. The row also carries `Added Date`, when it entered the calendar
+(`Original Tweet Date` records when the post itself was tweeted).
 
 ### Drafting replies
 
@@ -325,18 +323,17 @@ same `voice_corpus.json` used by the publishing pipeline. This is the connection
 between the two pipelines: discovery locates the post, and the corpus supplies
 the voice.
 
-You then pick your preferred option (edit it if you like), finalize it in
-`Draft`, and set `Status = Ready to post` — by hand, or by asking the skill to
-stage it. Replying on X itself stays manual. Nothing in this system posts on
-your behalf. Automated engagement is the primary cause of account suspensions
-(`x-req.md` §2.5), so the API is never used to reply.
+You then set `Selected` to your preferred option (editing that reply field in
+place if you want changes) and flip `Status = Ready to post` — by hand, or by
+asking the skill to stage it. Replying on X itself stays manual. Nothing in
+this system posts on your behalf. Automated engagement is the primary cause of
+account suspensions (`x-req.md` §2.5), so the API is never used to reply.
 
-The skill writes the three `Reply` fields and seeds `Draft` with its
-recommended option; it sets `Ready to post` only when you tell it to.
-`Selected`, `Approved`, `Posted`, `Keep?`, and `Self-Written Reply` all record
-your decisions, and are never modified.
+The skill writes the three `Reply` fields and recommends one; it sets
+`Selected` and `Ready to post` only when you tell it to, and never sets
+`Posted` — that records what you actually did.
 
-Once you have replied, set `Selected` and tick `Posted`, then run:
+Once you have replied, set `Selected` and `Status = Posted`, then run:
 
 ```bash
 .venv/bin/python scripts/sync_replies.py
@@ -344,7 +341,9 @@ Once you have replied, set `Selected` and tick `Posted`, then run:
 
 This copies the reply you actually sent into `voice_corpus.json` with
 `post_type: "reply"`, so future reply drafts learn from your real replies rather
-than only from your original posts. Rows with `Selected = Like/RT` are skipped, as
+than only from your original posts. A quote-retweet's `Retweet Message` is
+harvested too (as `post_type: "quote"`). Rows with `Selected = Like`, and
+plain retweets with no message, are skipped, as
 there is no text to learn from. Replies are keyed by Notion page ID rather than
 tweet ID (since you posted manually), so the script is safe to re-run.
 

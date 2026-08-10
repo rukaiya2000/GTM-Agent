@@ -154,11 +154,9 @@ class NotionClient:
 
     # --- Response Calendar (discovered posts to engage with) ---
     #
-    # Careful: this database has TWO status properties whose names differ only by
-    # case. `Status` (capital) is the review workflow (New/Reviewed/Stale/...).
-    # `status` (lowercase) is the engagement signal (Commented/Rejected/
-    # not-commented) that the curation skill learns from. Notion matches property
-    # names exactly, so mixing them up fails silently.
+    # `Status` is the single lifecycle column: New -> Reviewed -> Ready to post
+    # -> Posted, with Stale and the two Rejected values as exits. `Posted` is
+    # also the positive engagement signal the curation skill learns from.
 
     def get_response_calendar_rows(self, database_id: str) -> list[dict]:
         rows = []
@@ -170,9 +168,8 @@ class NotionClient:
                     "text": _plain_text_title(props.get("Original Tweet Text")),
                     "url": _url_value(props.get("Original Tweet URL")),
                     "review_status": _select_name(props.get("Status")),
-                    "engagement_status": _select_name(props.get("status")),
                     "selected": _select_name(props.get("Selected")),
-                    "posted": _checkbox(props.get("Posted")),
+                    "retweet_message": _plain_text(props.get("Retweet Message")),
                     "replies": {
                         "Reply 1": _plain_text(props.get("Reply 1")),
                         "Reply 2": _plain_text(props.get("Reply 2")),
@@ -187,8 +184,8 @@ class NotionClient:
 
     @staticmethod
     def selected_reply_text(row: dict) -> str:
-        """The reply the author actually chose, or "" if none/Like-RT (which has
-        no text of its own)."""
+        """The reply the author actually chose, or "" for Like (no text) and
+        Retweet (whose text lives in `Retweet Message`, not a reply field)."""
         return row["replies"].get(row.get("selected") or "", "")
 
     def create_discovery_row(

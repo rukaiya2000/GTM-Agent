@@ -22,22 +22,21 @@ source of truth, on the GTM page). Fetch it first: the response names its
 user to point Claude's Notion connection at the workspace holding the GTM
 page; do not guess at a different database.
 
-Two properties carry the workflow and the signal — don't confuse them:
+`Status` is the single lifecycle column: `New` → `Reviewed` → `Ready to post`
+→ `Posted`, with `Stale`, `Rejected (irrelevant)`, and `Rejected (IDK what to
+say)` as exits. You may set it while curating and staging, **except `Posted`
+— never set that yourself.** The author sets it after actually replying on X,
+and it doubles as the positive engagement signal this skill learns from;
+writing it would corrupt that signal.
 
-- `Status` (select) — review workflow: `New`, `Reviewed`, `Ready to post`,
-  `Stale`, `Rejected (irrelevant)`, `Rejected (IDK what to say)`. You may read
-  it and set it while curating.
-- `Posted` (checkbox) — the engagement signal you learn from: the author ticks
-  it when they actually sent a reply to that post. **Never write it.** It
-  records what the author did; writing it corrupts the very signal this skill
-  learns from.
-
-Other fields: `Reply 1/2/3` (your three options), `Draft` (the final message
-to post), `Selected` (which option they picked), `Approved`/`Keep?`/
-`Self-Written Reply` (the author's), `Source` (`discovery` or `mention` —
-mentions warrant a faster response), `Added Date` (when the row entered the
-calendar), `Original Tweet Date` (when the post was tweeted — use it for the
-staleness call).
+Other fields: `Reply 1/2/3` (your three options — the final message to post
+is the reply `Selected` names, edited in place), `Selected` (`Reply 1/2/3`,
+`Self-Written Reply`, `Like`, or `Retweet`), `Retweet Message` (for
+`Selected = Retweet`: the quote text, or empty for a plain retweet),
+`Self-Written Reply` (a reply they wrote themselves), `Source`
+(`discovery` or `mention` — mentions warrant a faster response), `Added Date`
+(when the row entered the calendar), `Original Tweet Date` (when the post was
+tweeted — use it for the staleness call).
 
 ## Phase 1 — Fetch new candidates
 
@@ -83,16 +82,14 @@ they apply them in practice. Read existing rows, substituting the data source
 id from the database fetch:
 
 ```sql
-SELECT "Original Tweet Text", "Posted", "Keep?", "Status"
+SELECT "Original Tweet Text", "Status"
 FROM "collection://<data source id from the fetch>"
-WHERE "Posted" = '__YES__' OR "Keep?" = '__YES__' OR "Status" LIKE 'Rejected%'
+WHERE "Status" = 'Posted' OR "Status" LIKE 'Rejected%'
 ```
 
 Interpret:
-- **`Posted` ticked** — the author actually replied. **Positive signal**: more
-  like these.
-- **`Keep?` ticked** — judged worth keeping even without a reply yet. Weaker
-  positive.
+- **`Status = Posted`** — the author actually replied. **Positive signal**:
+  more like these.
 - **`Status = Rejected (…)`** — actively unwanted. **Negative signal**: avoid this kind.
 - **Everything else** — no reply happened, but the content wasn't necessarily
   bad. **Weak or no signal.** Treat it as neutral, not as rejection — the author
@@ -173,17 +170,23 @@ Hard rules:
 
 ### Writing back
 
-Set `Reply 1`, `Reply 2`, `Reply 3` via `notion-update-page`, and put the
-strongest of the three into `Draft` as the proposed final message. Do it
-directly, no chat approval first — review happens in Notion.
+Set `Reply 1`, `Reply 2`, `Reply 3` via `notion-update-page`, and say in your
+report which of the three you'd send. Do it directly, no chat approval first —
+review happens in Notion.
 
-`Status = Ready to post` is the author's call, not yours: they flip it (or ask
-you to) once they're happy with `Draft`. When they ask you to stage a row —
-"stage this one", "use reply 2" — copy their chosen or edited reply into
-`Draft` and set `Status = Ready to post` then.
+`Status = Ready to post` is the author's call, not yours: they pick a reply,
+edit that reply field in place if they want changes, and flip the status — or
+ask you to. When they do ("stage this one", "use reply 2"), set `Selected` to
+the reply they named and `Status = Ready to post`. If they'd rather retweet
+than reply ("just retweet this", "quote it with …"), set
+`Selected = Retweet`, put the quote text in `Retweet Message` (draft one in
+their voice if they ask; leave it empty for a plain retweet), and
+`Status = Ready to post`.
 
-**Never write these:** `Selected`, `Approved`, `Posted`, `Keep?`, or
-`Self-Written Reply`. They all record what the *author* decided or did.
+**Never write these unasked:** `Selected` and `Self-Written Reply` record what
+the *author* decided; `Status = Posted` records that they actually replied on
+X, and is the signal curation learns from — never set it under any
+circumstances.
 
 ## Reporting
 
