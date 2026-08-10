@@ -2,7 +2,7 @@
 
 Replies to your posts, @-mentions and quotes are currently invisible to the rest
 of the system. They land in the same Response Calendar as discovered posts, so
-curate-discoveries and draft-replies work on them unchanged — the `Source`
+draft-x-replies works on them unchanged — the `Source`
 property tells them apart.
 
 Read-only against X. Nothing is replied to automatically.

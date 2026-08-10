@@ -1,9 +1,9 @@
 ---
-name: polish-tweet
+name: polish-x-drafts
 description: Rewrite a rough note into a polished X post in the user's own voice, using their already-posted content as style reference. Handles single tweets, multi-tweet threads, and long-form articles. Use when the user pastes a rough note and wants it turned into a post, asks to polish/rewrite a draft from the "Tweet Drafts" Notion database, or asks to retry/rephrase a rejected draft.
 ---
 
-# Polish Tweet
+# Polish X Drafts
 
 Turn a rough note into a polished X post that reads like the author actually wrote it.
 Output goes to Notion for human review — never posted from this skill.

@@ -1,9 +1,9 @@
 ---
-name: post-ready-tweets
+name: publish-x-queue
 description: Post every "Ready to post" row in the Tweet Drafts Notion database whose Scheduled Time has passed. Use when the user asks to post their ready tweets, publish everything that's due, or run the posting worker.
 ---
 
-# Post Ready Tweets
+# Publish X Queue
 
 Posts real tweets to X and costs real money per post — the actual posting logic
 stays in tested code (`scripts/post_all_due.py`), not LLM-driven reasoning. This

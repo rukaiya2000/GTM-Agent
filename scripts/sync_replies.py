@@ -1,8 +1,8 @@
 """Feed replies you actually sent into the voice corpus.
 
 A reply you chose and posted is as much your voice as an original post, but it
-only lives in Notion. This copies it into voice_corpus.json so draft-replies and
-polish-tweet can learn from it.
+only lives in Notion. This copies it into voice_corpus.json so
+draft-x-replies and polish-x-drafts can learn from it.
 
 Reads rows where `Posted` is checked and `Selected` names a reply with text.
 `Selected = Like/RT` is skipped — there's no text to learn from.

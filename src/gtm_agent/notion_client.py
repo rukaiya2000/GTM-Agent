@@ -1,3 +1,5 @@
+from datetime import date
+
 import requests
 
 from gtm_agent.config import get_notion_token
@@ -202,6 +204,7 @@ class NotionClient:
             "Original Tweet URL": {"url": tweet_url},
             "Status": {"select": {"name": "New"}},
             "Source": {"select": {"name": source}},
+            "Added Date": {"date": {"start": date.today().isoformat()}},
         }
         if tweet_date:
             properties["Original Tweet Date"] = {"date": {"start": tweet_date}}

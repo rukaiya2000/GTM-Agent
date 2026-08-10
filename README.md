@@ -106,7 +106,7 @@ Finds other people's posts worth replying to.
                           Status=New, Source=…
                                      │
                                      ▼
-                          discover-and-draft ──reads──▶ voice_corpus.json
+                          draft-x-replies ──reads──▶ voice_corpus.json
                       prunes with your `status` signal,       ▲
                       then writes Reply 1 / 2 / 3             │
                                      │                        │
@@ -133,7 +133,7 @@ Turns rough notes into posts.
   Stage = Ready for AI Review
         │
         ▼
-  polish-tweet skill ──reads──▶ voice_corpus.json
+  polish-x-drafts skill ──reads──▶ voice_corpus.json
         │                              ▲
         ▼                              │
   Final Text written                   │ appended on every
@@ -291,43 +291,50 @@ drafting operate on them unchanged. The `Source` property distinguishes
 
 ### Curating
 
-The `discover-and-draft` skill runs the discovery script, then prunes the staged
+The `draft-x-replies` skill runs the discovery script, then prunes the staged
 results based on what you have engaged with previously. (Curation and reply
 drafting are two phases of the same skill; each can also be invoked on its own —
 "clean up my calendar" curates without fetching, "draft replies" drafts for rows
 already staged.)
 
-**Important:** the Response Calendar contains two status properties whose names
-differ only by capitalization. Notion matches property names exactly, so
-confusing the two fails silently.
+**Important:** the Response Calendar carries the workflow and the learning
+signal in two different properties. Notion matches property names exactly, so
+confusing them fails silently.
 
 | Property | Values | Written by |
 |---|---|---|
-| `Status` | `New`, `Reviewed`, `Stale`, `Rejected (irrelevant)`, `Rejected (IDK what to say)` | the pipeline |
-| `status` | `Commented`, `Rejected`, `not-commented` | you only |
+| `Status` | `New`, `Reviewed`, `Ready to post`, `Stale`, `Rejected (irrelevant)`, `Rejected (IDK what to say)` | the pipeline (and you, for `Ready to post`) |
+| `Posted` (checkbox) | ticked when you actually replied | you only |
+| `Keep?` (checkbox) | ticked when a post is worth keeping | you only |
 
-The lowercase `status` is the learning signal. `Commented` is positive evidence,
-`Rejected` is negative, and `not-commented` is explicitly neutral: no reply
-occurred, but the content was not necessarily unsuitable. The skill reads this
-property and writes only the capitalized `Status`. Writing the lowercase property
-would corrupt the signal the skill depends on.
+`Posted` is the learning signal: ticked is positive evidence, `Keep?` a weaker
+positive, `Status = Rejected (…)` is negative, and everything else is
+explicitly neutral — no reply occurred, but the content was not necessarily
+unsuitable. The skill reads these and never writes them; writing them would
+corrupt the signal it depends on. The row also carries `Draft` — the final
+message to post, seeded by the skill with its recommended reply and finalized
+by you — and `Added Date`, when the row entered the calendar (`Original Tweet
+Date` records when the post itself was tweeted).
 
 ### Drafting replies
 
-The `discover-and-draft` skill's final phase populates `Reply 1`, `Reply 2`, and
+The `draft-x-replies` skill's final phase populates `Reply 1`, `Reply 2`, and
 `Reply 3` on the most promising staged rows (up to ~8 per pass, so tokens aren't
 spent on posts you may never get to) with three substantively different angles, written in your voice from the
 same `voice_corpus.json` used by the publishing pipeline. This is the connection
 between the two pipelines: discovery locates the post, and the corpus supplies
 the voice.
 
-You then set `Selected` to your preferred option and reply manually on X. Nothing
-in this system posts on your behalf. Automated engagement is the primary cause of
-account suspensions (`x-req.md` §2.5), so the API is never used to reply.
+You then pick your preferred option (edit it if you like), finalize it in
+`Draft`, and set `Status = Ready to post` — by hand, or by asking the skill to
+stage it. Replying on X itself stays manual. Nothing in this system posts on
+your behalf. Automated engagement is the primary cause of account suspensions
+(`x-req.md` §2.5), so the API is never used to reply.
 
-The skill writes only the three `Reply` fields. `Selected`, `Approved`, `Posted`,
-`Self-Written Reply`, and the lowercase `status` all record your decisions, and
-are never modified.
+The skill writes the three `Reply` fields and seeds `Draft` with its
+recommended option; it sets `Ready to post` only when you tell it to.
+`Selected`, `Approved`, `Posted`, `Keep?`, and `Self-Written Reply` all record
+your decisions, and are never modified.
 
 Once you have replied, set `Selected` and tick `Posted`, then run:
 
@@ -363,7 +370,7 @@ Place your rough notes in the page body of a `Tweet Drafts` row, set
 `Stage = Ready for AI Review`, and set `post-type` to `single-thread`,
 `multi-thread`, or `article`.
 
-The `polish-tweet` skill rewrites the note in your voice, writes the result to
+The `polish-x-drafts` skill rewrites the note in your voice, writes the result to
 `Final Text`, and sets `Stage = Ready for Human Review`. There is no chat approval
 step; review takes place in Notion.
 
@@ -390,7 +397,7 @@ In Notion, choose one of the following:
 .venv/bin/python scripts/post_all_due.py    # all due rows, oldest first
 ```
 
-Alternatively, ask Claude to post your ready tweets; the `post-ready-tweets` skill
+Alternatively, ask Claude to post your ready tweets; the `publish-x-queue` skill
 is a thin wrapper around `post_all_due.py`.
 
 Both scripts act only on rows where `Stage = Ready to post` and `Scheduled Time`
@@ -553,7 +560,7 @@ there yourself.
 ## The voice corpus
 
 `voice_corpus.json` (gitignored) is the sole source of style exemplars for
-`polish-tweet` and `discover-and-draft`:
+`polish-x-drafts` and `draft-x-replies`:
 
 ```json
 {
@@ -663,9 +670,9 @@ Two constraints apply:
 
 | Skill | Purpose |
 |---|---|
-| `polish-tweet` | Rough note to voice-matched draft |
-| `discover-and-draft` | Run discovery, prune using the `status` signal, then write three reply options in your voice for the shortlist |
-| `post-ready-tweets` | Thin trigger for `post_all_due.py` |
+| `polish-x-drafts` | Rough note to voice-matched draft |
+| `draft-x-replies` | Run discovery, prune using the `status` signal, then write three reply options in your voice for the shortlist |
+| `publish-x-queue` | Thin trigger for `post_all_due.py` |
 
 ## Project status
 
@@ -695,7 +702,7 @@ Known limitations:
 | Limitation | Detail |
 |---|---|
 | Topic search unverified | Recent-search may not be callable on pay-per-use billing (`x-req.md` open item 2). Degrades gracefully. |
-| No automatic polling | `polish-tweet` must be invoked; it does not watch for `Ready for AI Review` rows. |
+| No automatic polling | `polish-x-drafts` must be invoked; it does not watch for `Ready for AI Review` rows. |
 | No scheduler | Publishing is manual, gated on `Scheduled Time`. |
 | Weak `sync_posted.py` deduplication | Matches on exact text rather than tweet ID, since the `Posted URL` property was removed. Avoids re-importing on every run. |
 | Articles require X Premium | A sparse `articles` bucket also means weak long-form voice matching until several are published. |
@@ -710,7 +717,7 @@ Ordered approximately by impact on day-to-day use.
 
 ### Closing the remaining manual loops
 
-- **Automatic polling.** `polish-tweet` currently must be invoked explicitly. A
+- **Automatic polling.** `polish-x-drafts` currently must be invoked explicitly. A
   watcher that picks up `Ready for AI Review` rows would make the publishing
   pipeline self-feeding: drop a rough note into Notion, return to a finished
   draft.
