@@ -106,12 +106,9 @@ Finds other people's posts worth replying to.
                           Status=New, Source=…
                                      │
                                      ▼
-                            curate-discoveries
-                       prunes using your `status` signal
-                                     │
-                                     ▼
-                             draft-replies ──reads──▶ voice_corpus.json
-                        writes Reply 1 / 2 / 3                ▲
+                          discover-and-draft ──reads──▶ voice_corpus.json
+                      prunes with your `status` signal,       ▲
+                      then writes Reply 1 / 2 / 3             │
                                      │                        │
                                      ▼                        │
                         YOU pick one (`Selected`)             │
@@ -294,8 +291,11 @@ drafting operate on them unchanged. The `Source` property distinguishes
 
 ### Curating
 
-The `curate-discoveries` skill runs the discovery script, then prunes the staged
-results based on what you have engaged with previously.
+The `discover-and-draft` skill runs the discovery script, then prunes the staged
+results based on what you have engaged with previously. (Curation and reply
+drafting are two phases of the same skill; each can also be invoked on its own —
+"clean up my calendar" curates without fetching, "draft replies" drafts for rows
+already staged.)
 
 **Important:** the Response Calendar contains two status properties whose names
 differ only by capitalization. Notion matches property names exactly, so
@@ -314,8 +314,9 @@ would corrupt the signal the skill depends on.
 
 ### Drafting replies
 
-The `draft-replies` skill populates `Reply 1`, `Reply 2`, and `Reply 3` on staged
-rows with three substantively different angles, written in your voice from the
+The `discover-and-draft` skill's final phase populates `Reply 1`, `Reply 2`, and
+`Reply 3` on the most promising staged rows (up to ~8 per pass, so tokens aren't
+spent on posts you may never get to) with three substantively different angles, written in your voice from the
 same `voice_corpus.json` used by the publishing pipeline. This is the connection
 between the two pipelines: discovery locates the post, and the corpus supplies
 the voice.
@@ -552,7 +553,7 @@ there yourself.
 ## The voice corpus
 
 `voice_corpus.json` (gitignored) is the sole source of style exemplars for
-`polish-tweet` and `draft-replies`:
+`polish-tweet` and `discover-and-draft`:
 
 ```json
 {
@@ -663,8 +664,7 @@ Two constraints apply:
 | Skill | Purpose |
 |---|---|
 | `polish-tweet` | Rough note to voice-matched draft |
-| `curate-discoveries` | Run discovery, prune using the `status` signal |
-| `draft-replies` | Write three reply options in your voice |
+| `discover-and-draft` | Run discovery, prune using the `status` signal, then write three reply options in your voice for the shortlist |
 | `post-ready-tweets` | Thin trigger for `post_all_due.py` |
 
 ## Project status
