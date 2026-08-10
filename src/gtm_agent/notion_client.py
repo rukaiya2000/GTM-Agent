@@ -410,6 +410,31 @@ class NotionClient:
             )
         return rows
 
+    def set_author_contact(
+        self,
+        page_id: str,
+        email: str = "",
+        x_handle: str = "",
+        linkedin: str = "",
+        affiliation: str = "",
+        status: str | None = None,
+    ) -> None:
+        """Fill contact fields found by research (research_authors.py). Only
+        non-empty values are written, so existing fields are never cleared."""
+        properties: dict = {}
+        if email:
+            properties["Email"] = {"email": email}
+        if x_handle:
+            properties["X Handle"] = {"rich_text": [{"text": {"content": x_handle}}]}
+        if linkedin:
+            properties["LinkedIn"] = {"url": linkedin}
+        if affiliation:
+            properties["Affiliation"] = {"rich_text": [{"text": {"content": affiliation[:2000]}}]}
+        if status:
+            properties["Status"] = {"select": {"name": status}}
+        if properties:
+            self.update_page(page_id, properties)
+
     def get_sent_messages(self, database_id: str, limit: int = 5) -> list[str]:
         """Most recently sent outreach messages — used as tone examples so new
         drafts sound like what the user actually sends, not a generic default."""

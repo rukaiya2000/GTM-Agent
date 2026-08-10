@@ -180,6 +180,7 @@ curation, reply drafting.
 - Claude Code, for the skill-based steps
 - An OpenAI API key, if you intend to use the paper-outreach pipeline
 - A Google Cloud OAuth client with the Gmail API enabled, if you intend to send outreach email
+- Claude Code plus the `research` extra (`pip install -e ".[research]"`), only for the optional author-research step
 
 ## Installation
 
@@ -213,6 +214,10 @@ Populate `.env` with the following:
 `NOTION_API_TOKEN` is distinct from Claude Code's own Notion connection. The
 latter exists only inside a live chat session, whereas the posting scripts run
 unattended and require their own credential.
+
+The X and Gmail credentials each require setting up an OAuth app in the
+respective developer console — [docs/credentials.md](docs/credentials.md)
+walks through both, click by click.
 
 ### Initial setup
 
@@ -461,7 +466,26 @@ abstract plus your `Notes`. Emails are filled in only when the arXiv PDF
 itself states one; X handles come from a homepage on file or, failing that, a
 best-effort X search that is marked low-confidence and still needs a glance.
 Rows without a confirmed email or handle are left `Needs Handles` for you to
-fill in by hand.
+fill in by hand — or to research automatically:
+
+```bash
+.venv/bin/pip install -e ".[research]"                       # one-time, installs claude-agent-sdk
+.venv/bin/python scripts/research_authors.py                 # run 1.5: web-research Needs Handles rows
+.venv/bin/python scripts/research_authors.py --dry-run       # research and print, write nothing
+```
+
+This optional step fans out one Claude Agent SDK subagent per `Needs
+Handles` author — each searches the open web (homepages, lab pages, Google
+Scholar, X, LinkedIn) on Haiku, in parallel, and reports only values a
+source explicitly states, with the source cited. Findings fill the empty
+contact fields and the row moves to `Needs Review` — never straight to
+`Draft Ready`, because a web match is a candidate, not a confirmation. The
+cited evidence prints to the console for your glance; fields already filled
+in are never overwritten, and rows where nothing was found stay `Needs
+Handles`. The agent is restricted to web search and fetch (no shell, no file
+writes — all Notion writes happen in the script), and unlike everything else
+in this project it spends Anthropic API tokens, capped at `--limit` authors
+per run (default 25).
 
 In Notion, check `Selected` on whoever you want to reach, set `Send Via`
 (`Email`/`X`/`LinkedIn`) per author, and edit the `Blurb` or write directly
@@ -630,6 +654,7 @@ Two constraints apply:
 | `sync_posted.py` | Import X history into Notion for visibility |
 | `gmail_oauth_login.py` | One-time outreach-email authorization |
 | `fetch_paper_authors.py` | Resolve a paper's authors, handles, and blurb (paper-outreach run 1) |
+| `research_authors.py` | Optional subagent web research for authors left `Needs Handles` (paper-outreach run 1.5) |
 | `send_outreach.py` | Draft and send outreach messages (paper-outreach run 2) |
 | `send_followups.py` | Check for replies, send due follow-ups (paper-outreach run 3, run repeatedly) |
 
@@ -662,6 +687,8 @@ Implemented and offline-verified:
 - Paper-outreach author resolution, handle discovery, and blurb/message
   drafting, with real sending over Gmail and X DM
 - Paper-outreach reply detection and a two-follow-up cadence, both configurable
+- Optional parallel-subagent web research for authors missing handles
+  (`research_authors.py`), gated behind `Needs Review`
 
 Known limitations:
 
@@ -675,6 +702,7 @@ Known limitations:
 | Paper-outreach follow-ups are capped at two | Matches the requested cadence; nothing is sent after Follow-up 2 goes unanswered, and meeting scheduling/calendar sync from `Req/paper-outreach.md` remain unimplemented. |
 | Paper Outreach/Paper Authors databases are hand-created | Unlike Tweet Drafts, `setup.py` does not provision them; see [Pipeline 3](#pipeline-3-paper-outreach). |
 | LinkedIn outreach send and reply tracking are stubs | No third-party LinkedIn API exists for either, so those rows always draft for manual copy-paste and are excluded from `send_followups.py`. |
+| Author research spends Anthropic tokens | `research_authors.py` is the one component that bills an Anthropic API key (via the Claude Agent SDK); it is optional, capped per run, and its findings always land in `Needs Review` rather than being trusted. |
 
 ## Roadmap
 

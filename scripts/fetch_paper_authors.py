@@ -15,7 +15,8 @@ arXiv PDF itself, when there is one — the strongest signal available, and
 also what decides who counts as "Corresponding" over the first-author
 fallback. OpenAlex/S2 rarely carry socials, so most rows will come back with
 just name + affiliation and a "Needs Handles" status for you to fill in by
-hand in Notion.
+hand in Notion — or to let scripts/research_authors.py (run 1.5) take a
+web-research pass at first.
 
 Also generates the paper's Blurb (from the abstract + your Notes, drawing on
 your own already-sent messages as a tone example). This is run 1 of the
