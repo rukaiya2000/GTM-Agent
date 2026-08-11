@@ -272,11 +272,13 @@ approved it.
 .venv/bin/python scripts/harvest_and_rank.py      # legacy: prints only, accounts only
 ```
 
-Fetches from configured accounts and topics, ranks by engagement, deduplicates
-against both a local seen-set (`gtm_agent.db`) and rows already present in the
-Response Calendar, then writes the top `--limit` results (default 10) with
-`Status = New`. All operations against X are read-only; the script never likes,
-replies, or posts.
+Fetches from configured accounts and topics, drops thread continuations
+(`2/ 3/ …` self-replies — only thread heads and standalone posts are staged;
+reply drafting reads the full thread from the head for context), ranks by
+engagement, deduplicates against both a local seen-set (`gtm_agent.db`) and
+rows already present in the Response Calendar, then writes the top `--limit`
+results (default 10) with `Status = New`. All operations against X are
+read-only; the script never likes, replies, or posts.
 
 ### Monitoring mentions
 
@@ -317,12 +319,18 @@ on. The row also carries `Added Date`, when it entered the calendar
 
 ### Drafting replies
 
-The `draft-x-replies` skill populates `Reply 1`, `Reply 2`, and `Reply 3` on
-every newly staged row with three substantively different angles, plus a
+The `draft-x-replies` skill routes each newly staged row: tweets referencing
+external content (links, quote-tweets, threads, named papers/repos) get a
+research subagent — all spawned in parallel — that resolves the links, reads
+the thread, looks the sources up on the web, and only then drafts;
+self-contained tweets (pure opinions, quips) are drafted directly with no
+subagent, so tokens go to research only where research exists to do. Every
+row ends up with `Reply 1/2/3` (three substantively different angles) plus a
 suggested `Retweet Message` (clear it for a plain retweet), written in your
-voice from the same `voice_corpus.json` used by the publishing pipeline. This
-is the connection between the two pipelines: discovery locates the post, and
-the corpus supplies the voice.
+voice from the same `voice_corpus.json` used by the publishing pipeline.
+Rows whose links can't be resolved are flagged as shallower in the report. This is the connection
+between the two pipelines: discovery locates the post, and the corpus
+supplies the voice.
 
 You then set `Selected` to your preferred option (editing that reply field in
 place if you want changes) and flip `Status = Ready to post` — by hand, or by

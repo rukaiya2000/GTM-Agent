@@ -1,16 +1,17 @@
 ---
 name: draft-x-replies
-description: Fetch new posts into the Response Calendar and draft the full option set for each — Reply 1/2/3 plus a suggested retweet message — so the author can review, edit, and choose. Statuses belong to the author; the skill only advises. Use when the user asks to find posts to engage with, discover new posts, draft replies, or work through their Response Calendar.
+description: Fetch new posts into the Response Calendar and draft Reply 1/2/3 plus a suggested retweet message for every row — hybrid routing spawns parallel research subagents only for tweets referencing external content (links, threads, papers), grouped by shared source; self-contained tweets are drafted inline. Statuses belong to the author; the skill only advises. Use when the user asks to find posts to engage with, discover new posts, draft replies, or work through their Response Calendar.
 ---
 
 # Draft X Replies
 
 Two jobs: **fetch** candidates (deterministic script, costs money per read),
 then **draft the full option set** for every new row — three replies plus a
-suggested retweet message — so the author can review, edit, and choose in
-Notion. **You never post anything**, and **you never change `Status` on your
-own** — every fetched row stays `New` until the author moves it. Curation is
-advice in your report, not writes. Automated engagement is what gets accounts
+suggested retweet message, each **grounded in the sources the tweet actually
+references**. Drafting fans out across parallel subagents, one per row.
+**You never post anything**, and **you never change `Status` on your own** —
+every fetched row stays `New` until the author moves it. Curation is advice
+in your report, not writes. Automated engagement is what gets accounts
 suspended (`x-req.md` §2.5).
 
 Database: `ec8eb9c5f591820393d101733079983f` (Response Calendar — the single
@@ -33,11 +34,11 @@ quoting) and `Status = Ready to post`. Never set any other status, and never
 set `Posted` under any circumstances — it records that they actually replied
 on X and is the signal your advice learns from.
 
-Fields per row: `Reply 1/2/3` (your three reply options), `Retweet Message`
-(your suggested quote text — the author clears it for a plain retweet),
-`Selected` (`Reply 1/2/3`, `Self-Written Reply`, `Like`, or `Retweet` — their
-choice), `Self-Written Reply` (theirs), `Added Date` (when the row entered
-the calendar), `Original Tweet Date` (when the post was tweeted).
+Fields per row: `Reply 1/2/3` (three reply options), `Retweet Message`
+(suggested quote text — the author clears it for a plain retweet), `Selected`
+(`Reply 1/2/3`, `Self-Written Reply`, `Like`, or `Retweet` — their choice),
+`Self-Written Reply` (theirs), `Added Date` (when the row entered the
+calendar), `Original Tweet Date` (when the post was tweeted).
 
 ## Phase 1 — Fetch new candidates
 
@@ -50,63 +51,82 @@ anything already seen or already in the calendar, and stages the top 10 as
 `Status = New`. Report its output as-is; don't re-rank on engagement
 yourself, that's already done.
 
-## Phase 2 — Draft the full option set for every new row
+## Phase 2 — Draft via parallel research subagents
 
-For **every** row with `Status = New` and an empty `Reply 1` (skip rows that
-already have replies unless asked to redo them, and rows where
-`Self-Written Reply` is filled):
+Eligible rows: `Status = New` with an empty `Reply 1`. Skip rows that already
+have replies (unless asked to redo them) and rows where `Self-Written Reply`
+is filled.
 
-### Voice
+**Route each row first — subagents are for research, not for every row:**
 
-Read the **`tweets`** bucket of `voice_corpus.json` — replies are short-form,
-so the `articles` bucket is not relevant here. Entries with
-`post_type: "reply"` or `"quote"` are things the author actually sent (via
-`scripts/sync_replies.py`) — weight those highest. Entries carrying a
-`metrics.engagement_rate` are measured performers; prefer higher ones, but
-treat a missing metric as unmeasured, never as bad. Match the author's tone,
-vocabulary, technical depth, and punctuation habits. If the file is missing
-or nearly empty, say so and write plainly rather than inventing a voice.
+- **Needs research → subagent:** the tweet contains a link, is a
+  quote-tweet, is a thread head (the thread must be read), or names a
+  paper, benchmark, repo, or product that has to be looked up.
+- **Self-contained → draft inline yourself:** a pure opinion, prediction,
+  or quip with no external reference and nothing to fetch. Spawning an
+  agent here only burns tokens; apply `style.md` and write the drafts
+  directly.
 
-A reply is not a broadcast post: it's responsive and conversational, assumes
-the original post as context, and doesn't re-introduce what the reader can
-already see. A retweet message is closer to a broadcast: it frames the post
-for the author's followers in one or two sentences.
+**Group before spawning:** rows that reference the same source or belong to
+the same conversation share one subagent — it researches the source once
+and drafts for every row in its group. Never send N agents to read the
+same paper.
 
-### The author's standing style direction
+**Spawn all the research subagents in a single message so they run
+concurrently** — never one at a time, and never two for the same row.
+Subagents research and draft; they return JSON and **never touch Notion**.
+You collect the results, write them back alongside your inline drafts, and
+compile one report. If subagents are unavailable in the session, run the
+research procedure yourself, sequentially, for the rows that need it.
 
-Where it conflicts with a corpus habit, this direction wins:
+### Each subagent's task
 
-- technical and peer-level, in a founder/executive voice
-- concise: **max 220 characters and 1–2 sentences each** (deliberately
-  tighter than X's 280 limit)
-- curious or additive — the goal is to engage researchers/builders and start
-  a thoughtful conversation
-- not salesy; don't mention the company unless directly relevant
-- no emojis, no bulleting, no hashtags
-- no jargon overload unless the tweet itself is highly technical
-- sound natural on X, not like a memo
+Give every subagent its group's rows (tweet text, URL, date, and Notion
+page id per row) and these instructions — **do not paste style or voice
+rules into the prompt**; instead instruct it to first read
+`.claude/skills/draft-x-replies/style.md` and `voice_corpus.json` (repo
+root) and follow them:
 
-### What to write on each row
+1. **Research before drafting — this is the point.** Resolve every t.co
+   link. Open quote-tweets and read what was quoted. If the tweet is a
+   thread head (starts with "1/", or clearly continues), **read the rest of
+   the thread from its URL** — the reply goes on the head, but the whole
+   thread is context (discovery stages only heads; the continuations exist
+   and often carry the substance). If a paper, benchmark, repo, or product
+   is named or linked, find it on the web (arXiv page, project site, repo
+   README) and read the abstract and key claims. Replies must engage with
+   what the source actually says — a reply that only orbits the tweet's own
+   phrasing is a failed draft. Budget: the abstract or first screen of each
+   source, not a 40-page read.
+2. If a link genuinely can't be resolved (deleted post, paywall,
+   media-only), draft from the tweet text alone and say so.
+3. Reply with **only** a JSON array — one object per row in your group, no
+   other text:
 
-`Reply 1`, `Reply 2`, `Reply 3` — **three different angles**, not three
-rewordings. Useful angles: add a concrete detail or counter-example; share
-directly relevant first-hand experience; ask a specific genuine question;
-respectfully complicate a claim; connect it to adjacent work.
+```json
+[{"page_id": "<the Notion page id you were given for this row>",
+  "reply_1": "...", "reply_2": "...", "reply_3": "...",
+  "retweet_message": "...",
+  "grounding": "<one line naming the sources actually read>",
+  "ungrounded": false}]
+```
 
-`Retweet Message` — one suggested quote line framing the post, in the same
-style. The author clears it if they'd rather plain-retweet.
+### Voice, style, and rules — `style.md`
 
-Hard rules:
-- **No empty agreement or generic praise.** If a reply carries no
-  information, it's not worth sending.
-- No flattery, no thread-hijacking into self-promotion, no restating the post.
-- Don't invent facts, papers, numbers, or experiences the author hasn't had.
-  If an angle would need a claim you can't ground, pick a different angle.
-- If a post genuinely doesn't warrant a reply, still fill the fields, but say
-  so plainly in the report — the rejection call is the author's to make.
+The voice guidance, the author's standing style direction, the three-angles
+requirement, and the hard rules all live in **`style.md` next to this
+file** — the single definition, so prompts and skill can't drift. Read it
+yourself before drafting inline rows, and instruct every subagent to read
+it (plus `voice_corpus.json` in the repo root) as its first step instead of
+pasting the rules into each prompt.
 
-Write everything via `notion-update-page` directly, no chat approval first —
-review happens in Notion. Leave `Status = New`.
+### Writing back (you, never the subagents)
+
+Collect every subagent's JSON, then write `Reply 1/2/3` and
+`Retweet Message` to each row via `notion-update-page`, directly, no chat
+approval first — review happens in Notion. Leave `Status = New`. A subagent
+that returns malformed JSON or times out: redo that row yourself rather than
+leaving it blank.
 
 ## Phase 3 — Assess and prioritise (report only, no writes)
 
@@ -129,8 +149,12 @@ everything else neutral. Thin history means low-confidence advice — say so.
 
 ## Reporting
 
-One report at the end: how many rows were staged, then the rows ranked most
-promising first — for each, the three replies and the retweet suggestion with
-a few words on the angle each takes, and which option you'd send. Then the
-likely-skips with a one-line reason each, so the author can reject them in
-bulk. Flag anything unusual (empty corpus, failed sources, thin signal).
+One report at the end: how many rows were staged and the subagent/inline
+split (how many rows needed research versus were drafted directly), then
+the rows ranked most promising first — for each, the three replies and the
+retweet suggestion with a few words on the angle each takes, **what sources
+were actually read** (from `grounding`; "none needed" for inline rows), and
+which option you'd send. Call out any `ungrounded` rows so the author knows
+those drafts are shallower. Then the likely-skips with a one-line reason
+each. Flag anything unusual (empty corpus, failed sources, thin signal,
+subagents redone by hand).
