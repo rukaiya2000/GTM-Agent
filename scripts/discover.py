@@ -17,7 +17,7 @@ from gtm_agent.ranking import rank_tweets
 from gtm_agent.store import Store
 from gtm_agent.x_client import XApiError, XClient, full_text
 
-DEFAULT_LIMIT = 15
+DEFAULT_LIMIT = 10
 PER_ACCOUNT = 20
 PER_TOPIC = 20
 TWEET_ID_RE = re.compile(r"/status/(\d+)")

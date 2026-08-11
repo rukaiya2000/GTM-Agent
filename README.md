@@ -103,7 +103,7 @@ Finds other people's posts worth replying to.
                         └────────────┬────────────────────┘
                                      ▼
                             Response Calendar
-                          Status=New, Source=…
+                          Status=New, drafts filled
                                      │
                                      ▼
                           draft-x-replies ──reads──▶ voice_corpus.json
@@ -274,7 +274,7 @@ approved it.
 
 Fetches from configured accounts and topics, ranks by engagement, deduplicates
 against both a local seen-set (`gtm_agent.db`) and rows already present in the
-Response Calendar, then writes the top `--limit` results (default 15) with
+Response Calendar, then writes the top `--limit` results (default 10) with
 `Status = New`. All operations against X are read-only; the script never likes,
 replies, or posts.
 
@@ -286,26 +286,27 @@ replies, or posts.
 
 Replies to your posts, @-mentions, and quotes are otherwise invisible to the
 system. These are staged into the same Response Calendar, so curation and reply
-drafting operate on them unchanged. The `Source` property distinguishes
-`discovery` from `mention`; mentions generally warrant a faster response.
+drafting operate on them unchanged.
 
 ### Curating
 
-The `draft-x-replies` skill runs the discovery script, then prunes the staged
-results based on what you have engaged with previously. (Curation and reply
-drafting are two phases of the same skill; each can also be invoked on its own —
-"clean up my calendar" curates without fetching, "draft replies" drafts for rows
-already staged.)
+The `draft-x-replies` skill runs the discovery script, drafts the full option
+set on every new row, and *advises* on priority in its report — but it never
+changes `Status` on its own. Rows arrive as `New` and stay `New` until you
+review them in Notion: reject the junk, mark the keepers, promote what you
+want to send. The skill's relevance ranking (from your standing criteria plus
+what you've previously `Posted` versus `Rejected`) exists to make that review
+fast, not to replace it.
 
 **Important:** `Status` is the Response Calendar's single lifecycle column:
 
 | Value | Meaning | Set by |
 |---|---|---|
-| `New` | freshly staged by discovery | the pipeline |
-| `Reviewed` | curated, worth your time | the skill or you |
-| `Ready to post` | reply finalized, ready to send | you (or the skill, on your ask) |
+| `New` | freshly staged by discovery, drafts filled in | the pipeline |
+| `Reviewed` | you looked at it, worth keeping around | you |
+| `Ready to post` | option chosen, ready to send | you (or the skill, on your ask) |
 | `Posted` | you actually replied on X | **you only** |
-| `Stale` / `Rejected (irrelevant)` / `Rejected (IDK what to say)` | exits | the skill or you |
+| `Stale` / `Rejected (irrelevant)` / `Rejected (IDK what to say)` | exits | you |
 
 `Posted` doubles as the learning signal: it is positive evidence, the
 `Rejected (…)` values are negative, and everything else is explicitly
@@ -316,12 +317,12 @@ on. The row also carries `Added Date`, when it entered the calendar
 
 ### Drafting replies
 
-The `draft-x-replies` skill's final phase populates `Reply 1`, `Reply 2`, and
-`Reply 3` on the most promising staged rows (up to ~8 per pass, so tokens aren't
-spent on posts you may never get to) with three substantively different angles, written in your voice from the
-same `voice_corpus.json` used by the publishing pipeline. This is the connection
-between the two pipelines: discovery locates the post, and the corpus supplies
-the voice.
+The `draft-x-replies` skill populates `Reply 1`, `Reply 2`, and `Reply 3` on
+every newly staged row with three substantively different angles, plus a
+suggested `Retweet Message` (clear it for a plain retweet), written in your
+voice from the same `voice_corpus.json` used by the publishing pipeline. This
+is the connection between the two pipelines: discovery locates the post, and
+the corpus supplies the voice.
 
 You then set `Selected` to your preferred option (editing that reply field in
 place if you want changes) and flip `Status = Ready to post` — by hand, or by

@@ -194,13 +194,11 @@ class NotionClient:
         text: str,
         tweet_url: str,
         tweet_date: str | None = None,
-        source: str = "discovery",
     ) -> None:
         properties = {
             "Original Tweet Text": {"title": [{"text": {"content": text[:2000]}}]},
             "Original Tweet URL": {"url": tweet_url},
             "Status": {"select": {"name": "New"}},
-            "Source": {"select": {"name": source}},
             "Added Date": {"date": {"start": date.today().isoformat()}},
         }
         if tweet_date:

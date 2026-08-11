@@ -1,42 +1,43 @@
 ---
 name: draft-x-replies
-description: One pass over the engagement pipeline — discover posts worth engaging with, curate them in the Response Calendar by learning from which past posts the author actually commented on versus rejected, then draft three reply options in the author's voice for the most promising rows. Use when the user asks to find posts to engage with, discover new posts, clean up or prioritise their Response Calendar, draft replies, or work through discovered posts.
+description: Fetch new posts into the Response Calendar and draft the full option set for each — Reply 1/2/3 plus a suggested retweet message — so the author can review, edit, and choose. Statuses belong to the author; the skill only advises. Use when the user asks to find posts to engage with, discover new posts, draft replies, or work through their Response Calendar.
 ---
 
 # Draft X Replies
 
-One skill, three phases: **fetch** candidates (deterministic script, costs money
-per read), **curate** them against the author's past behaviour, then **draft**
-replies for the rows worth their time. **You never post anything** — the author
-picks a reply and sends it on X by hand. That's deliberate: automated engagement
-is what gets accounts suspended (`x-req.md` §2.5).
-
-Not every invocation runs all three phases. "Find posts" → phases 1–3. "Clean up
-my calendar" → 2 only. "Draft replies" → 3 only (plus 2's signal-reading to pick
-rows). Skip what the user didn't ask for; fetching costs money.
+Two jobs: **fetch** candidates (deterministic script, costs money per read),
+then **draft the full option set** for every new row — three replies plus a
+suggested retweet message — so the author can review, edit, and choose in
+Notion. **You never post anything**, and **you never change `Status` on your
+own** — every fetched row stays `New` until the author moves it. Curation is
+advice in your report, not writes. Automated engagement is what gets accounts
+suspended (`x-req.md` §2.5).
 
 Database: `ec8eb9c5f591820393d101733079983f` (Response Calendar — the single
 source of truth, on the GTM page). Fetch it first: the response names its
-`collection://…` data source id, which the SQL below needs. **If the fetch
-404s, the Notion connector is attached to the wrong workspace** — tell the
-user to point Claude's Notion connection at the workspace holding the GTM
-page; do not guess at a different database.
+`collection://…` data source id if you need SQL. **If the fetch 404s, the
+Notion connector is attached to the wrong workspace** — tell the user to point
+Claude's Notion connection at the workspace holding the GTM page; do not guess
+at a different database.
 
-`Status` is the single lifecycle column: `New` → `Reviewed` → `Ready to post`
-→ `Posted`, with `Stale`, `Rejected (irrelevant)`, and `Rejected (IDK what to
-say)` as exits. You may set it while curating and staging, **except `Posted`
-— never set that yourself.** The author sets it after actually replying on X,
-and it doubles as the positive engagement signal this skill learns from;
-writing it would corrupt that signal.
+## The row lifecycle — who sets what
 
-Other fields: `Reply 1/2/3` (your three options — the final message to post
-is the reply `Selected` names, edited in place), `Selected` (`Reply 1/2/3`,
-`Self-Written Reply`, `Like`, or `Retweet`), `Retweet Message` (for
-`Selected = Retweet`: the quote text, or empty for a plain retweet),
-`Self-Written Reply` (a reply they wrote themselves), `Source`
-(`discovery` or `mention` — mentions warrant a faster response), `Added Date`
-(when the row entered the calendar), `Original Tweet Date` (when the post was
-tweeted — use it for the staleness call).
+`Status`: `New` → `Reviewed` → `Ready to post` → `Posted`, with `Stale`,
+`Rejected (irrelevant)`, `Rejected (IDK what to say)` as exits.
+
+**Every `Status` transition is the author's.** New rows arrive as `New` and
+stay `New` — they review, edit drafts, reject, and promote themselves. The
+only exception: when they explicitly ask you to stage a row ("stage this one",
+"use reply 2", "just retweet it"), set `Selected` (and `Retweet Message` if
+quoting) and `Status = Ready to post`. Never set any other status, and never
+set `Posted` under any circumstances — it records that they actually replied
+on X and is the signal your advice learns from.
+
+Fields per row: `Reply 1/2/3` (your three reply options), `Retweet Message`
+(your suggested quote text — the author clears it for a plain retweet),
+`Selected` (`Reply 1/2/3`, `Self-Written Reply`, `Like`, or `Retweet` — their
+choice), `Self-Written Reply` (theirs), `Added Date` (when the row entered
+the calendar), `Original Tweet Date` (when the post was tweeted).
 
 ## Phase 1 — Fetch new candidates
 
@@ -44,153 +45,92 @@ tweeted — use it for the staleness call).
 .venv/bin/python scripts/discover.py            # add --dry-run to preview
 ```
 
-Reads `interests.md` for accounts and topics, ranks by engagement, skips anything
-already seen or already in the calendar, and writes the top ones with
-`Status = New` and `status` empty. Report its output as-is; don't re-rank on
-engagement yourself, that's already done.
+Reads `interests.md` for accounts and topics, ranks by engagement, skips
+anything already seen or already in the calendar, and stages the top 10 as
+`Status = New`. Report its output as-is; don't re-rank on engagement
+yourself, that's already done.
 
-## Phase 2 — Curate: standing criteria first, learned signal second
+## Phase 2 — Draft the full option set for every new row
 
-### The author's standing criteria
-
-You are evaluating tweets for a founder/operator workflow. **Be selective.**
-Keep a tweet only if it is:
-
-1. Announcing a new RL environment
-2. A new paper or post on autonomously scaling agent evaluations, benchmarks,
-   or RL environments
-3. Data methods related to scaling post-training agents
-4. A well-thought-out opinion on scaling post-training, RL, or
-   data/environments for post-training
-5. Automatic harness engineering / auto-optimization for AI systems
-6. Recent enough to still be worth engaging — too old to reply to now goes to
-   `Status = Stale`, not Rejected
-
-Focus on benchmarks and environments related to:
-- computer/browser use agents
-- tool use capabilities in enterprise workflows
-- long-horizon agentic capabilities
-
-Reject tweets that are: promotional, engagement bait, meme content, shallow
-commentary, generic hype, low-information reposting, or robotics-hardware
-related.
-
-### The learned signal
-
-The criteria above are the baseline; the author's actual behaviour shows how
-they apply them in practice. Read existing rows, substituting the data source
-id from the database fetch:
-
-```sql
-SELECT "Original Tweet Text", "Status"
-FROM "collection://<data source id from the fetch>"
-WHERE "Status" = 'Posted' OR "Status" LIKE 'Rejected%'
-```
-
-Interpret:
-- **`Status = Posted`** — the author actually replied. **Positive signal**:
-  more like these.
-- **`Status = Rejected (…)`** — actively unwanted. **Negative signal**: avoid this kind.
-- **Everything else** — no reply happened, but the content wasn't necessarily
-  bad. **Weak or no signal.** Treat it as neutral, not as rejection — the author
-  may simply not have gotten to it.
-
-Infer what distinguishes Commented from Rejected: subject matter, technical depth,
-whether there's a real opening to say something substantive, tone, who posted it.
-If there are very few of either, say so — thin signal means low-confidence
-curation, not a confident call.
-
-Then, for each row with `Status = New`:
-1. Judge it against the inferred signal.
-2. Clearly a Rejected-type post → set `Status = Rejected (irrelevant)`. Leave the
-   lowercase `status` alone.
-3. Otherwise leave `Status = New`.
-
-Finish the phase with a shortlist: the rows you'd start with, most promising
-first, with a one-line reason each.
-
-## Phase 3 — Draft replies for the shortlist
-
-Draft for the shortlist from phase 2 — **up to ~8 rows unless the user asks for
-more or names specific rows**. Drafting for every surviving row wastes tokens on
-posts the author may never get to; the rest stay staged and can be drafted later.
-
-Eligible rows: `Status` is `New` or `Reviewed` **and** `Reply 1` is empty. Skip:
-- `Status = Stale`, `Rejected (irrelevant)`, `Rejected (IDK what to say)`
-- rows where `Self-Written Reply` is already filled — the author handled it
-- rows that already have replies, unless asked to redo them
+For **every** row with `Status = New` and an empty `Reply 1` (skip rows that
+already have replies unless asked to redo them, and rows where
+`Self-Written Reply` is filled):
 
 ### Voice
 
-Read the **`tweets`** bucket of `voice_corpus.json` — replies are short-form, so
-the `articles` bucket is not relevant here. Entries with `post_type: "reply"` are
-replies the author actually sent (via `scripts/sync_replies.py`) — weight those
-highest, they're the closest match to what you're writing. Entries carrying a
-`metrics.engagement_rate` are measured performers; prefer higher ones, but treat
-a missing metric as unmeasured, never as bad. Match the author's tone, vocabulary,
-technical depth, and punctuation habits. If the file is missing or empty, say so
-and write plainly rather than inventing a voice.
+Read the **`tweets`** bucket of `voice_corpus.json` — replies are short-form,
+so the `articles` bucket is not relevant here. Entries with
+`post_type: "reply"` or `"quote"` are things the author actually sent (via
+`scripts/sync_replies.py`) — weight those highest. Entries carrying a
+`metrics.engagement_rate` are measured performers; prefer higher ones, but
+treat a missing metric as unmeasured, never as bad. Match the author's tone,
+vocabulary, technical depth, and punctuation habits. If the file is missing
+or nearly empty, say so and write plainly rather than inventing a voice.
 
-A reply is not a broadcast post. Same voice, different register: it's responsive
-and conversational, it assumes the original post as context, and it doesn't
-re-introduce what the reader can already see.
+A reply is not a broadcast post: it's responsive and conversational, assumes
+the original post as context, and doesn't re-introduce what the reader can
+already see. A retweet message is closer to a broadcast: it frames the post
+for the author's followers in one or two sentences.
 
-### Writing the three replies
+### The author's standing style direction
 
-Fill `Reply 1`, `Reply 2`, `Reply 3`. The author's standing direction for this
-workflow — where it conflicts with a corpus habit, this direction wins:
+Where it conflicts with a corpus habit, this direction wins:
 
 - technical and peer-level, in a founder/executive voice
-- concise: **max 220 characters and 1–2 sentences each** (deliberately tighter
-  than X's 280 limit)
-- curious or additive — the goal is to engage researchers/builders and start a
-  thoughtful conversation
+- concise: **max 220 characters and 1–2 sentences each** (deliberately
+  tighter than X's 280 limit)
+- curious or additive — the goal is to engage researchers/builders and start
+  a thoughtful conversation
 - not salesy; don't mention the company unless directly relevant
-- no emojis, no bulleting
+- no emojis, no bulleting, no hashtags
 - no jargon overload unless the tweet itself is highly technical
 - sound natural on X, not like a memo
 
-They must be **three different angles**, not three rewordings of the same
-thought. Useful angles:
-- add a concrete detail, example, or counter-example the post didn't cover
-- share directly relevant first-hand experience
-- ask a specific, genuine question that moves the thread forward
-- respectfully complicate or push back on a claim
-- connect it to adjacent work the author knows about
+### What to write on each row
+
+`Reply 1`, `Reply 2`, `Reply 3` — **three different angles**, not three
+rewordings. Useful angles: add a concrete detail or counter-example; share
+directly relevant first-hand experience; ask a specific genuine question;
+respectfully complicate a claim; connect it to adjacent work.
+
+`Retweet Message` — one suggested quote line framing the post, in the same
+style. The author clears it if they'd rather plain-retweet.
 
 Hard rules:
-- **No empty agreement or generic praise.** "Great point", "So true", "This 👏" —
-  never. If a reply carries no information, it's not a reply worth sending.
+- **No empty agreement or generic praise.** If a reply carries no
+  information, it's not worth sending.
 - No flattery, no thread-hijacking into self-promotion, no restating the post.
-- No hashtags.
-- Don't invent facts, papers, numbers, or experiences the author hasn't had. If an
-  angle would need a claim you can't ground, pick a different angle.
-- If a shortlisted post genuinely doesn't warrant a reply, say so and suggest the
-  author set `Status = Rejected (IDK what to say)` rather than manufacturing three.
+- Don't invent facts, papers, numbers, or experiences the author hasn't had.
+  If an angle would need a claim you can't ground, pick a different angle.
+- If a post genuinely doesn't warrant a reply, still fill the fields, but say
+  so plainly in the report — the rejection call is the author's to make.
 
-### Writing back
+Write everything via `notion-update-page` directly, no chat approval first —
+review happens in Notion. Leave `Status = New`.
 
-Set `Reply 1`, `Reply 2`, `Reply 3` via `notion-update-page`, and say in your
-report which of the three you'd send. Do it directly, no chat approval first —
-review happens in Notion.
+## Phase 3 — Assess and prioritise (report only, no writes)
 
-`Status = Ready to post` is the author's call, not yours: they pick a reply,
-edit that reply field in place if they want changes, and flip the status — or
-ask you to. When they do ("stage this one", "use reply 2"), set `Selected` to
-the reply they named and `Status = Ready to post`. If they'd rather retweet
-than reply ("just retweet this", "quote it with …"), set
-`Selected = Retweet`, put the quote text in `Retweet Message` (draft one in
-their voice if they ask; leave it empty for a plain retweet), and
-`Status = Ready to post`.
+Rank the new rows for the report using the author's standing criteria — keep:
+new RL environments; papers/posts on autonomously scaling agent evaluations,
+benchmarks, or RL environments; data methods for scaling post-training
+agents; well-thought-out opinions on scaling post-training, RL, or
+data/environments; automatic harness engineering / auto-optimization. Focus:
+computer/browser-use agents, tool use in enterprise workflows, long-horizon
+agentic capabilities. Flag as likely-skip: promotional posts, engagement
+bait, memes, shallow commentary, generic hype, low-info reposting, robotics
+hardware, thread fragments (the reply belongs on the head), and posts too old
+to still reply to.
 
-**Never write these unasked:** `Selected` and `Self-Written Reply` record what
-the *author* decided; `Status = Posted` records that they actually replied on
-X, and is the signal curation learns from — never set it under any
-circumstances.
+Sharpen the ranking with the learned signal where history exists: rows the
+author moved to `Posted` are positive evidence, `Rejected (…)` negative,
+everything else neutral. Thin history means low-confidence advice — say so.
+
+**These judgments go in your report only. Do not write them to `Status`.**
 
 ## Reporting
 
-One report at the end, not one per phase: how many rows were staged, how many you
-pruned and on what basis, then each drafted row's three replies with a few words
-on what angle each takes — so the author can choose without opening every row.
-Flag anything you skipped and why, including shortlisted rows left undrafted.
+One report at the end: how many rows were staged, then the rows ranked most
+promising first — for each, the three replies and the retweet suggestion with
+a few words on the angle each takes, and which option you'd send. Then the
+likely-skips with a one-line reason each, so the author can reject them in
+bulk. Flag anything unusual (empty corpus, failed sources, thin signal).

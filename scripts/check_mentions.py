@@ -2,8 +2,7 @@
 
 Replies to your posts, @-mentions and quotes are currently invisible to the rest
 of the system. They land in the same Response Calendar as discovered posts, so
-draft-x-replies works on them unchanged — the `Source`
-property tells them apart.
+draft-x-replies works on them unchanged.
 
 Read-only against X. Nothing is replied to automatically.
 """
@@ -92,14 +91,13 @@ def main() -> int:
                 full_text(m),
                 url,
                 tweet_date=m.get("created_at"),
-                source="mention",
             )
             written += 1
         except NotionApiError as e:
             print(f"Failed to stage {url}: {e}")
             failed += 1
 
-    print(f"\nStaged {written} mention(s) with Source = mention, Status = New.")
+    print(f"\nStaged {written} mention(s) as Status = New.")
     if failed:
         print(f"{failed} failed to write.")
     return 0
