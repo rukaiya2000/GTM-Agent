@@ -58,7 +58,7 @@ class XClient:
             params={
                 "query": query,
                 "max_results": max_results,
-                "tweet.fields": "public_metrics,created_at,note_tweet",
+                "tweet.fields": "public_metrics,created_at,note_tweet,conversation_id",
                 "expansions": "author_id",
                 # name/description/public_metrics are what account discovery
                 # needs to show who an author is and filter by follower count.
@@ -75,8 +75,10 @@ class XClient:
         params = {
             "max_results": max_results,
             # note_tweet carries the full text of long posts (>280 chars, Premium).
-            # Without it, `text` is truncated for those.
-            "tweet.fields": "public_metrics,created_at,note_tweet",
+            # Without it, `text` is truncated for those. conversation_id lets
+            # discovery drop self-thread continuations, which X lets through
+            # `exclude=replies` in practice.
+            "tweet.fields": "public_metrics,created_at,note_tweet,conversation_id",
             "exclude": "retweets,replies",
         }
         if pagination_token:
