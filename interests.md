@@ -16,5 +16,6 @@ Search terms for the recent-search endpoint (last 7 days only). One idea per bul
 Availability on pay-per-use is unconfirmed — if the endpoint isn't callable on your
 plan, discovery falls back to accounts-only and says so.
 
-- agent evaluation benchmark
-- LLM tool calling
+Disabled (pulled only noise — make it a `-` bullet again to re-enable):
+agent evaluation benchmark
+LLM tool calling
