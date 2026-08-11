@@ -345,6 +345,13 @@ class NotionClient:
     def set_paper_status(self, page_id: str, status: str) -> None:
         self.update_page(page_id, {"Status": {"select": {"name": status}}})
 
+    def set_paper_name(self, page_id: str, name: str) -> None:
+        """Backfills the title from the resolved paper — rows staged with
+        only a link have no title, which also leaves the `Paper` relation
+        column blank on every linked Paper Authors row (Notion displays a
+        relation by the related page's title)."""
+        self.update_page(page_id, {"Paper Name": {"title": [{"text": {"content": name[:2000]}}]}})
+
     def set_paper_blurb(self, page_id: str, blurb: str) -> None:
         self.update_page(page_id, {"Blurb": {"rich_text": [{"text": {"content": blurb[:2000]}}]}})
 
@@ -405,7 +412,9 @@ class NotionClient:
                     "linkedin": _url_value(props.get("LinkedIn")),
                     "selected": _checkbox(props.get("Selected")),
                     "send_via": _select_name(props.get("Send Via")),
+                    "subject": _plain_text(props.get("Subject")),
                     "message": _plain_text(props.get("Message")),
+                    "post_error": _plain_text(props.get("Post Error")),
                     "status": _select_name(props.get("Status")),
                     "first_sent": _date_start(props.get("First Sent")),
                     "last_sent": _date_start(props.get("Last Sent")),
@@ -454,13 +463,33 @@ class NotionClient:
                 messages.append(text)
         return messages
 
-    def set_author_message(self, page_id: str, message: str, status: str, send_via: str | None = None) -> None:
+    def set_author_message(
+        self,
+        page_id: str,
+        message: str,
+        status: str,
+        send_via: str | None = None,
+        subject: str | None = None,
+        post_error: str | None = None,
+    ) -> None:
+        """`subject` is Email-only — a channel with no subject line (X,
+        LinkedIn) simply never passes one, and the Subject column stays
+        blank for that row. `send_via` is only ever passed by a human
+        explicitly picking a channel elsewhere in Notion — drafting never
+        sets it. `post_error` records what went wrong on a send attempt
+        (LinkedIn's lack of a send API, a failed Gmail/X call, etc.) for a
+        human to read directly in Notion; pass `""` to clear a stale error
+        after a later successful send."""
         properties: dict = {
             "Message": {"rich_text": [{"text": {"content": message[:2000]}}]},
             "Status": {"select": {"name": status}},
         }
         if send_via:
             properties["Send Via"] = {"select": {"name": send_via}}
+        if subject is not None:
+            properties["Subject"] = {"rich_text": [{"text": {"content": subject[:2000]}}]}
+        if post_error is not None:
+            properties["Post Error"] = {"rich_text": [{"text": {"content": post_error[:2000]}}]}
         self.update_page(page_id, properties)
 
     # --- Follow-ups (send_followups.py) ---

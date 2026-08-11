@@ -20,9 +20,11 @@ web-research pass at first.
 
 Also generates the paper's Blurb (from the abstract + your Notes, drawing on
 your own already-sent messages as a tone example). This is run 1 of the
-two-run workflow: this populates everything automatically; run 2
-(send_outreach.py) is where you pick Send Via per author, edit anything you
-want, and it drafts + sends.
+workflow: this populates everything automatically; run 2
+(research_authors.py, optional) fills in remaining handles; run 3
+(send_outreach.py --draft-only) drafts a Subject + Message for every author
+with a contact on file, no manual setup needed first. Sending is a separate,
+explicit step (send_outreach.py without the flag).
 """
 
 import argparse
@@ -109,6 +111,12 @@ def process_paper(
         print("  Paper resolved but no author list available.")
         notion.set_paper_status(paper_row["id"], "Needs Review")
         return
+
+    if not paper_row["name"]:
+        # A row staged with only a link has no title, which also leaves the
+        # `Paper` relation column blank on every linked Paper Authors row.
+        notion.set_paper_name(paper_row["id"], paper["title"])
+        paper_row["name"] = paper["title"]
 
     arxiv_id = (paper.get("externalIds") or {}).get("ArXiv")
     if not arxiv_id and paper_row.get("link"):
@@ -224,7 +232,7 @@ def main() -> int:
         print(f"\n{paper_row['name']}")
         process_paper(notion, authors_db_id, paper_row, args.all_authors, x_client, tone_examples)
 
-    print("\nDone. Pick Selected + Send Via per author in Notion, then run send_outreach.py.")
+    print("\nDone. Next: research_authors.py for any Needs Handles rows, then send_outreach.py --draft-only.")
     return 0
 
 

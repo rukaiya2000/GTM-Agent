@@ -44,7 +44,7 @@ from gtm_agent.config import (
     get_x_client_id,
     get_x_client_secret,
 )
-from gtm_agent.gmail_client import GmailApiError, get_profile, send_email, split_subject_and_body, thread_has_reply
+from gtm_agent.gmail_client import GmailApiError, get_profile, send_email, thread_has_reply
 from gtm_agent.gmail_oauth import get_valid_access_token as get_valid_gmail_token
 from gtm_agent.notion_client import NotionApiError, NotionClient
 from gtm_agent.outreach_llm import OutreachLLMError, followup_message
@@ -101,7 +101,7 @@ def send_followup(author: dict, message: str, gmail_token: str | None, x_token: 
     if author["send_via"] == "Email":
         if not gmail_token:
             return False, "Gmail isn't connected — copy the message above and send it yourself."
-        original_subject, _ = split_subject_and_body(author["message"])
+        original_subject = author["subject"] or "Following up on your paper"
         try:
             send_email(
                 author["email"] or "", message, gmail_token,

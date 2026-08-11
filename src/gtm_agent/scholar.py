@@ -163,11 +163,17 @@ def search_papers(query: str) -> list[dict]:
         return [_paper_from_work(work)]
 
     arxiv = ARXIV_PATTERN.search(query) if "arxiv" in query.lower() or ARXIV_PATTERN.fullmatch(query.strip()) else None
-    from_identifier = False
     if arxiv:
+        # An arXiv ID names one specific paper. If we can't resolve its real
+        # title, searching OpenAlex full-text on the raw ID/URL instead would
+        # rank on whatever it loosely matches and return a false-confidence
+        # result for a completely different paper — worse than no match.
         title = _arxiv_title(arxiv.group(1))
-        if title:
-            query, from_identifier = title, True
+        if not title:
+            return []
+        query, from_identifier = title, True
+    else:
+        from_identifier = False
 
     payload = _openalex("/works", {"search": query, "per-page": str(CANDIDATE_LIMIT), "select": WORK_FIELDS})
     work = _best_match(query, payload.get("results", []), require_exact=from_identifier)

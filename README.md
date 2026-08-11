@@ -451,12 +451,17 @@ not created for you. In Notion, create:
   (text)
 - **Paper Authors**: `Author` (title), `Paper` (relation to Paper Outreach),
   `Role` (select: `Corresponding`, `Co-author`), `Affiliation` (text), `Email`
-  (email), `X Handle` (text), `LinkedIn` (url), `Selected` (checkbox),
-  `Send Via` (select: `Email`, `X`, `LinkedIn`), `Message` (text), `Status`
-  (select: `Needs Handles`, `Draft Ready`, `Needs Review`, `Message Drafted`,
-  `Sent`, `Followup 1 Sent`, `Followup 2 Sent`, `Replied`), `First Sent`
-  (date), `Last Sent` (date), `Thread Ref` (text), `Followup 1 Message`
-  (text), `Followup 2 Message` (text)
+  (email), `X Handle` (text), `LinkedIn` (url), `Selected` (checkbox, not
+  currently used by any script — `Send Via` is what authorizes a send),
+  `Send Via` (select: `Email`, `X`, `LinkedIn` — left blank by drafting, set
+  by hand when you're ready to send), `Subject` (text, Email only — X/LinkedIn
+  DMs have no subject line and leave it blank), `Message` (text, body only),
+  `Post Error` (text, what went wrong on a failed/skipped send — cleared on a
+  later successful send), `Status` (select: `Needs Handles`, `Draft Ready`,
+  `Needs Review`, `Message Drafted`, `Sent`, `Followup 1 Sent`,
+  `Followup 2 Sent`, `Replied`), `First Sent` (date), `Last Sent` (date),
+  `Thread Ref` (text), `Followup 1 Message` (text), `Followup 2 Message`
+  (text)
 
 The last five Paper Authors fields (`First Sent` through `Followup 2
 Message`) are only used by the follow-up cadence described below — skip them
@@ -503,17 +508,36 @@ writes — all Notion writes happen in the script), and unlike everything else
 in this project it spends Anthropic API tokens, capped at `--limit` authors
 per run (default 25).
 
-In Notion, check `Selected` on whoever you want to reach, set `Send Via`
-(`Email`/`X`/`LinkedIn`) per author, and edit the `Blurb` or write directly
-into `Message` if you want to change anything before it goes out. Then:
+Then draft messages for everyone with a contact on file — this never touches
+`Send Via` at all, so nothing needs to be set in Notion first:
 
 ```bash
-.venv/bin/python scripts/send_outreach.py                     # run 2: draft (if needed) and send
+.venv/bin/python scripts/send_outreach.py --draft-only         # run 2: draft only, never sends
 ```
 
-This drafts one message per channel (not per author) for anyone `Selected`
-with a `Send Via` set and no `Message` yet, pulling tone from your own
-previously `Sent` messages as few-shot examples. It then attempts to send:
+This drafts a `Subject` + `Message` for every author who doesn't have one
+yet and has an Email, X Handle, or LinkedIn on file, always in Email format
+(subject + body) regardless of which contact they actually have — which
+parts get used depends on whatever channel is picked at send time, not on
+this. Pulls tone from your own previously `Sent` messages as few-shot
+examples. Authors with no contact info at all are skipped and reported.
+`Status` becomes `Message Drafted`; nothing is ever sent in this mode, and
+`Send Via` is left exactly as it was (blank, unless you'd already set it
+yourself).
+
+Review the drafts in Notion, edit anything you want, and set `Send Via`
+(`Email`/`X`/`LinkedIn`) by hand on whoever you want to actually reach —
+that choice alone is what authorizes a send, nothing else is checked. Then:
+
+```bash
+.venv/bin/python scripts/send_outreach.py                     # run 3: draft (if needed) and send
+```
+
+This sends to every author with a `Send Via` set — anyone still blank is
+left alone entirely. `Send Via` also decides what gets used: `Email` sends
+the Subject + Message together; `X`/`LinkedIn` send the Message only and the
+Subject is dropped. Anyone still missing a `Message` at this point gets one
+drafted first, same as run 2. Then it attempts to send:
 
 | Channel | Requires | Behaviour |
 |---|---|---|
@@ -521,12 +545,16 @@ previously `Sent` messages as few-shot examples. It then attempts to send:
 | X | `x_oauth_login.py` run with `dm.write`, `X Handle` on file | Sends a real DM; `Status` becomes `Sent` |
 | LinkedIn | — | No third-party send API exists; always drafts and prints for you to copy-paste, `Status` stays `Message Drafted` |
 
-A hand-written `Message` is always used as-is and never overwritten. Rows
-already `Sent` are skipped on re-run, so `send_outreach.py` is safe to run
-repeatedly as you fill in more authors. A successful Email or X send also
-records `First Sent`/`Last Sent` and, for Email, the Gmail thread id — what
-the follow-up run below needs to check for a reply and, if there isn't one,
-reply in the same thread.
+Whatever went wrong on a failed or skipped send (no OAuth token, no contact
+on file for that channel, LinkedIn's lack of a send API, an API error) is
+written to `Post Error` so you can see why directly in Notion; a later
+successful send clears it. A hand-written `Message` or `Subject` is always
+used as-is and never overwritten. Rows already `Sent` are skipped on re-run,
+so `send_outreach.py` is safe to run repeatedly as you fill in more authors.
+A successful Email or
+X send also records `First Sent`/`Last Sent` and, for Email, the Gmail
+thread id — what the follow-up run below needs to check for a reply and, if
+there isn't one, reply in the same thread.
 
 ### Following up
 
