@@ -1,3 +1,4 @@
+import re
 import time
 
 import requests
@@ -182,16 +183,37 @@ def _post(path: str, access_token: str, body: dict | None = None) -> dict:
 
 
 def post_tweet(
-    text: str, access_token: str, reply_to_tweet_id: str | None = None
+    text: str,
+    access_token: str,
+    reply_to_tweet_id: str | None = None,
+    quote_tweet_id: str | None = None,
 ) -> dict:
     """Post a tweet.
 
     Pass reply_to_tweet_id to chain this tweet as a reply to a previous one —
-    that's how threads are built, one call per tweet."""
+    that's how threads are built, one call per tweet. Pass quote_tweet_id to
+    quote-tweet another post instead (the two are mutually exclusive)."""
     body = {"text": text}
     if reply_to_tweet_id:
         body["reply"] = {"in_reply_to_tweet_id": reply_to_tweet_id}
+    if quote_tweet_id:
+        body["quote_tweet_id"] = quote_tweet_id
     return _post("/tweets", access_token, body)
+
+
+def retweet(user_id: str, tweet_id: str, access_token: str) -> dict:
+    """Retweet (repost) another tweet as-is, no added text."""
+    return _post(f"/users/{user_id}/retweets", access_token, {"tweet_id": tweet_id})
+
+
+TWEET_ID_RE = re.compile(r"(\d+)(?:\?.*)?$")
+
+
+def tweet_id_from_url(url: str) -> str | None:
+    """Pull the numeric tweet id off the end of a tweet URL (e.g.
+    https://x.com/user/status/1234567890)."""
+    match = TWEET_ID_RE.search(url.rstrip("/"))
+    return match.group(1) if match else None
 
 
 def send_dm(username: str, text: str, access_token: str, bearer_token: str | None = None) -> dict:

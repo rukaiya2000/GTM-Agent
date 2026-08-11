@@ -30,15 +30,21 @@ at a different database.
 stay `New` — they review, edit drafts, reject, and promote themselves. The
 only exception: when they explicitly ask you to stage a row ("stage this one",
 "use reply 2", "just retweet it"), set `Selected` (and `Retweet Message` if
-quoting) and `Status = Ready to post`. Never set any other status, and never
-set `Posted` under any circumstances — it records that they actually replied
-on X and is the signal your advice learns from.
+quoting), `Scheduled Time`, and `Status = Ready to post`. Never set any other
+status, and never set `Posted` under any circumstances — it records that a
+reply/retweet actually went out and is the signal your advice learns from.
 
 Fields per row: `Reply 1/2/3` (three reply options), `Retweet Message`
 (suggested quote text — the author clears it for a plain retweet), `Selected`
-(`Reply 1/2/3`, `Self-Written Reply`, `Like`, or `Retweet` — their choice),
-`Self-Written Reply` (theirs), `Added Date` (when the row entered the
-calendar), `Original Tweet Date` (when the post was tweeted).
+(`Reply 1/2/3`, `Self-Written Reply`, or `Retweet` — their choice; there's no
+`Like` option, that action was cut entirely), `Self-Written Reply` (theirs),
+`Scheduled Time` (when it should actually post — required for `Ready to
+post` rows), `Added Date` (when the row entered the calendar), `Original
+Tweet Date` (when the post was tweeted).
+
+Posting is a separate, explicitly-invoked step — the `publish-x-replies`
+skill, not this one. This skill only drafts and stages; it never calls the X
+API to post.
 
 ## Phase 1 — Fetch new candidates
 

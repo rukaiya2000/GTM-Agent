@@ -333,28 +333,28 @@ between the two pipelines: discovery locates the post, and the corpus
 supplies the voice.
 
 You then set `Selected` to your preferred option (editing that reply field in
-place if you want changes) and flip `Status = Ready to post` — by hand, or by
-asking the skill to stage it. Replying on X itself stays manual. Nothing in
-this system posts on your behalf. Automated engagement is the primary cause of
-account suspensions (`x-req.md` §2.5), so the API is never used to reply.
-
-The skill writes the three `Reply` fields and recommends one; it sets
+place if you want changes), a `Scheduled Time`, and flip `Status = Ready to
+post` — by hand, or by asking the skill to stage it. `draft-x-replies` itself
+never posts: it writes the three `Reply` fields and recommends one, sets
 `Selected` and `Ready to post` only when you tell it to, and never sets
-`Posted` — that records what you actually did.
+`Posted` — that records what actually went out.
 
-Once you have replied, set `Selected` and `Status = Posted`, then run:
+Posting the staged queue is a separate, explicitly-invoked step —
+`publish-x-replies` / `scripts/post_response_calendar.py` — not something
+that runs unattended off drafting. It posts rows whose `Scheduled Time` has
+passed: the selected reply, or a plain/quote retweet depending on `Selected`.
+There is deliberately no `Like` action — auto-like is the specific pattern
+`x-req.md` §2.5 calls out as the cause of account suspensions, and a like has
+no authored text to justify automating it, so it was cut from `Selected`
+entirely rather than wired up.
 
-```bash
-.venv/bin/python scripts/sync_replies.py
-```
-
-This copies the reply you actually sent into `voice_corpus.json` with
-`post_type: "reply"`, so future reply drafts learn from your real replies rather
-than only from your original posts. A quote-retweet's `Retweet Message` is
-harvested too (as `post_type: "quote"`). Rows with `Selected = Like`, and
-plain retweets with no message, are skipped, as
-there is no text to learn from. Replies are keyed by Notion page ID rather than
-tweet ID (since you posted manually), so the script is safe to re-run.
+On success the script appends the posted text to `voice_corpus.json` itself
+(`post_type: "reply"` or `"quote"`), so replies/quotes posted this way don't
+need a separate corpus-sync step. `scripts/sync_replies.py` still exists as a
+backfill for anything posted outside this flow — e.g. by hand, directly on
+X — keyed by Notion page ID so it's safe to re-run on rows already marked
+`Posted` manually. Plain retweets carry no text either way, so nothing is
+harvested for those.
 
 ### API constraints
 
@@ -663,10 +663,11 @@ Two constraints apply:
 | `discover_accounts.py` | Find accounts by topic; `--promote` adds approved ones to `interests.md` |
 | `check_mentions.py` | Stage replies and mentions into the Response Calendar |
 | `harvest_and_rank.py` | Legacy print-only, accounts-only variant |
-| `post_ready.py`, `post_all_due.py` | Publish due rows |
+| `post_ready.py`, `post_all_due.py` | Publish due Tweet Drafts rows |
+| `post_response_calendar.py` | Publish due Response Calendar rows (replies/retweets) |
 | `fetch_voice_corpus.py` | Seed or merge corpus entries from your timeline |
 | `fetch_metrics.py` | Attach post analytics to corpus entries |
-| `sync_replies.py` | Add sent replies to the corpus |
+| `sync_replies.py` | Backfill hand-posted replies into the corpus |
 | `sync_posted.py` | Import X history into Notion for visibility |
 | `gmail_oauth_login.py` | One-time outreach-email authorization |
 | `fetch_paper_authors.py` | Resolve a paper's authors, handles, and blurb (paper-outreach run 1) |
@@ -681,6 +682,7 @@ Two constraints apply:
 | `polish-x-drafts` | Rough note to voice-matched draft |
 | `draft-x-replies` | Run discovery, prune using the `status` signal, then write three reply options in your voice for the shortlist |
 | `publish-x-queue` | Thin trigger for `post_all_due.py` |
+| `publish-x-replies` | Thin trigger for `post_response_calendar.py` |
 
 ## Project status
 
@@ -695,6 +697,7 @@ Implemented and offline-verified:
 - Voice-matched drafting for all three post types, plus rejected-draft retry
   informed by Notion comments
 - Reply drafting sharing the publishing pipeline's voice corpus
+- Reply/retweet publishing for staged Response Calendar rows (`post_response_calendar.py`), gated on `Scheduled Time`, with `Like` deliberately unsupported
 - Publishing for all three post types, including reply-chained threads and the
   Articles API, with both partial-failure paths handled
 - Corpus seeding, automatic growth on publication, performance metric attachment,

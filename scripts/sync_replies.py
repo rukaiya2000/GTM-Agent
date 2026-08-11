@@ -6,8 +6,10 @@ draft-x-replies and polish-x-drafts can learn from it.
 
 Reads rows with `Status = Posted` where `Selected` names something with text:
 a reply field (learned as post_type "reply") or a quote-retweet's
-`Retweet Message` (learned as post_type "quote"). `Selected = Like` and plain
-retweets are skipped — there's no text to learn from.
+`Retweet Message` (learned as post_type "quote"). Plain retweets (empty
+`Retweet Message`) are skipped — there's no text to learn from. This is a
+backfill for anything posted outside `scripts/post_response_calendar.py`
+(which already writes to the corpus at post time) — e.g. rows posted by hand.
 """
 
 from gtm_agent.config import ConfigError, get_response_calendar_db_id
@@ -39,8 +41,6 @@ def main() -> int:
         if row["review_status"] != "Posted" or not row["selected"]:
             continue
 
-        if row["selected"] == "Like":
-            continue  # no text to learn from
         if row["selected"] == "Retweet":
             # A quote-retweet's message is authored text in the user's voice;
             # a plain retweet (empty message) carries nothing to learn.

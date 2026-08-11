@@ -158,9 +158,14 @@ class NotionClient:
     # -> Posted, with Stale and the two Rejected values as exits. `Posted` is
     # also the positive engagement signal the curation skill learns from.
 
-    def get_response_calendar_rows(self, database_id: str) -> list[dict]:
+    def get_response_calendar_rows(
+        self, database_id: str, status: str | None = None
+    ) -> list[dict]:
+        filter_ = (
+            {"property": "Status", "select": {"equals": status}} if status else None
+        )
         rows = []
-        for page in self.query_database(database_id):
+        for page in self.query_database(database_id, filter_=filter_):
             props = page["properties"]
             rows.append(
                 {
@@ -170,6 +175,7 @@ class NotionClient:
                     "review_status": _select_name(props.get("Status")),
                     "selected": _select_name(props.get("Selected")),
                     "retweet_message": _plain_text(props.get("Retweet Message")),
+                    "scheduled_time": _date_start(props.get("Scheduled Time")),
                     "replies": {
                         "Reply 1": _plain_text(props.get("Reply 1")),
                         "Reply 2": _plain_text(props.get("Reply 2")),
@@ -184,8 +190,8 @@ class NotionClient:
 
     @staticmethod
     def selected_reply_text(row: dict) -> str:
-        """The reply the author actually chose, or "" for Like (no text) and
-        Retweet (whose text lives in `Retweet Message`, not a reply field)."""
+        """The reply the author actually chose, or "" for Retweet (whose text
+        lives in `Retweet Message`, not a reply field)."""
         return row["replies"].get(row.get("selected") or "", "")
 
     def create_discovery_row(
@@ -510,4 +516,13 @@ class NotionClient:
         self.update_page(
             page_id,
             {"Post Error": {"rich_text": [{"text": {"content": message[:2000]}}]}},
+        )
+
+    def mark_response_row_posted(self, page_id: str) -> None:
+        self.update_page(
+            page_id,
+            {
+                "Status": {"select": {"name": "Posted"}},
+                "Post Error": {"rich_text": []},
+            },
         )
