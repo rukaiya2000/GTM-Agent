@@ -6,4 +6,5 @@ __pycache__/
 *.db
 *.sqlite3
 x_oauth_token.json
+gmail_oauth_token.json
 voice_corpus.json

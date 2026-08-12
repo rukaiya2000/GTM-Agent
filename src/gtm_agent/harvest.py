@@ -1,7 +1,7 @@
 
 from gtm_agent.ranking import rank_tweets
 from gtm_agent.store import Store
-from gtm_agent.x_client import XClient
+from gtm_agent.x_client import XApiError, XClient
 
 
 def resolve_user_id(client: XClient, store: Store, username: str) -> str:
@@ -9,6 +9,11 @@ def resolve_user_id(client: XClient, store: Store, username: str) -> str:
     if cached:
         return cached
     user = client.get_user_by_username(username)
+    if "data" not in user:
+        # Suspended/nonexistent accounts come back as an errors payload with
+        # HTTP 200 — surface as XApiError so callers degrade per source.
+        detail = (user.get("errors") or [{}])[0].get("detail", "user not found")
+        raise XApiError(200, detail)
     user_id = user["data"]["id"]
     store.cache_user_id(username, user_id)
     return user_id

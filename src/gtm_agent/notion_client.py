@@ -1,3 +1,5 @@
+from datetime import date
+
 import requests
 
 from gtm_agent.config import get_notion_token
@@ -110,9 +112,15 @@ class NotionClient:
             "Content-Type": "application/json",
         }
 
-    def query_database(self, database_id: str, filter_: dict | None = None) -> list[dict]:
+    def query_database(
+        self, database_id: str, filter_: dict | None = None, sorts: list[dict] | None = None
+    ) -> list[dict]:
         results: list[dict] = []
-        body: dict = {"filter": filter_} if filter_ else {}
+        body: dict = {}
+        if filter_:
+            body["filter"] = filter_
+        if sorts:
+            body["sorts"] = sorts
         cursor: str | None = None
 
         while True:
@@ -146,15 +154,18 @@ class NotionClient:
 
     # --- Response Calendar (discovered posts to engage with) ---
     #
-    # Careful: this database has TWO status properties whose names differ only by
-    # case. `Status` (capital) is the review workflow (New/Reviewed/Stale/...).
-    # `status` (lowercase) is the engagement signal (Commented/Rejected/
-    # not-commented) that the curation skill learns from. Notion matches property
-    # names exactly, so mixing them up fails silently.
+    # `Status` is the single lifecycle column: New -> Reviewed -> Ready to post
+    # -> Posted, with Stale and the two Rejected values as exits. `Posted` is
+    # also the positive engagement signal the curation skill learns from.
 
-    def get_response_calendar_rows(self, database_id: str) -> list[dict]:
+    def get_response_calendar_rows(
+        self, database_id: str, status: str | None = None
+    ) -> list[dict]:
+        filter_ = (
+            {"property": "Status", "select": {"equals": status}} if status else None
+        )
         rows = []
-        for page in self.query_database(database_id):
+        for page in self.query_database(database_id, filter_=filter_):
             props = page["properties"]
             rows.append(
                 {
@@ -162,9 +173,9 @@ class NotionClient:
                     "text": _plain_text_title(props.get("Original Tweet Text")),
                     "url": _url_value(props.get("Original Tweet URL")),
                     "review_status": _select_name(props.get("Status")),
-                    "engagement_status": _select_name(props.get("status")),
                     "selected": _select_name(props.get("Selected")),
-                    "posted": _checkbox(props.get("Posted")),
+                    "retweet_message": _plain_text(props.get("Retweet Message")),
+                    "scheduled_time": _date_start(props.get("Scheduled Time")),
                     "replies": {
                         "Reply 1": _plain_text(props.get("Reply 1")),
                         "Reply 2": _plain_text(props.get("Reply 2")),
@@ -179,8 +190,8 @@ class NotionClient:
 
     @staticmethod
     def selected_reply_text(row: dict) -> str:
-        """The reply the author actually chose, or "" if none/Like-RT (which has
-        no text of its own)."""
+        """The reply the author actually chose, or "" for Retweet (whose text
+        lives in `Retweet Message`, not a reply field)."""
         return row["replies"].get(row.get("selected") or "", "")
 
     def create_discovery_row(
@@ -189,13 +200,12 @@ class NotionClient:
         text: str,
         tweet_url: str,
         tweet_date: str | None = None,
-        source: str = "discovery",
     ) -> None:
         properties = {
             "Original Tweet Text": {"title": [{"text": {"content": text[:2000]}}]},
             "Original Tweet URL": {"url": tweet_url},
             "Status": {"select": {"name": "New"}},
-            "Source": {"select": {"name": source}},
+            "Added Date": {"date": {"start": date.today().isoformat()}},
         }
         if tweet_date:
             properties["Original Tweet Date"] = {"date": {"start": tweet_date}}
@@ -308,6 +318,208 @@ class NotionClient:
         if not response.ok:
             raise NotionApiError(response.status_code, response.text)
 
+    # --- Paper outreach (papers awaiting author outreach) ---
+
+    def get_paper_outreach_rows(self, database_id: str, status: str | None = None) -> list[dict]:
+        filter_ = None
+        if status == "__empty__":
+            filter_ = {"property": "Status", "select": {"is_empty": True}}
+        elif status:
+            filter_ = {"property": "Status", "select": {"equals": status}}
+
+        rows = []
+        for page in self.query_database(database_id, filter_=filter_):
+            props = page["properties"]
+            rows.append(
+                {
+                    "id": page["id"],
+                    "name": _plain_text_title(props.get("Paper Name")),
+                    "link": _url_value(props.get("Paper link")),
+                    "notes": _plain_text(props.get("Notes")),
+                    "status": _select_name(props.get("Status")),
+                    "blurb": _plain_text(props.get("Blurb")),
+                }
+            )
+        return rows
+
+    def set_paper_status(self, page_id: str, status: str) -> None:
+        self.update_page(page_id, {"Status": {"select": {"name": status}}})
+
+    def set_paper_name(self, page_id: str, name: str) -> None:
+        """Backfills the title from the resolved paper — rows staged with
+        only a link have no title, which also leaves the `Paper` relation
+        column blank on every linked Paper Authors row (Notion displays a
+        relation by the related page's title)."""
+        self.update_page(page_id, {"Paper Name": {"title": [{"text": {"content": name[:2000]}}]}})
+
+    def set_paper_blurb(self, page_id: str, blurb: str) -> None:
+        self.update_page(page_id, {"Blurb": {"rich_text": [{"text": {"content": blurb[:2000]}}]}})
+
+    # --- Paper authors (one row per author, linked to a paper) ---
+
+    def create_paper_author_row(
+        self,
+        database_id: str,
+        paper_page_id: str,
+        name: str,
+        affiliation: str = "",
+        role: str = "Co-author",
+        email: str = "",
+        x_handle: str = "",
+        linkedin: str = "",
+        status: str = "Needs Handles",
+    ) -> str:
+        properties: dict = {
+            "Author": {"title": [{"text": {"content": name[:200]}}]},
+            "Paper": {"relation": [{"id": paper_page_id}]},
+            "Role": {"select": {"name": role}},
+            "Status": {"select": {"name": status}},
+        }
+        if affiliation:
+            properties["Affiliation"] = {"rich_text": [{"text": {"content": affiliation[:2000]}}]}
+        if email:
+            properties["Email"] = {"email": email}
+        if x_handle:
+            properties["X Handle"] = {"rich_text": [{"text": {"content": x_handle}}]}
+        if linkedin:
+            properties["LinkedIn"] = {"url": linkedin}
+
+        response = requests.post(
+            f"{BASE_URL}/pages",
+            headers=self._headers(),
+            json={"parent": {"database_id": database_id}, "properties": properties},
+        )
+        if not response.ok:
+            raise NotionApiError(response.status_code, response.text)
+        return response.json()["id"]
+
+    def get_paper_author_rows(self, database_id: str, paper_page_id: str | None = None) -> list[dict]:
+        filter_ = None
+        if paper_page_id:
+            filter_ = {"property": "Paper", "relation": {"contains": paper_page_id}}
+
+        rows = []
+        for page in self.query_database(database_id, filter_=filter_):
+            props = page["properties"]
+            rows.append(
+                {
+                    "id": page["id"],
+                    "name": _plain_text_title(props.get("Author")),
+                    "affiliation": _plain_text(props.get("Affiliation")),
+                    "role": _select_name(props.get("Role")),
+                    "email": (props.get("Email") or {}).get("email"),
+                    "x_handle": _plain_text(props.get("X Handle")),
+                    "linkedin": _url_value(props.get("LinkedIn")),
+                    "selected": _checkbox(props.get("Selected")),
+                    "send_via": _select_name(props.get("Send Via")),
+                    "subject": _plain_text(props.get("Subject")),
+                    "message": _plain_text(props.get("Message")),
+                    "post_error": _plain_text(props.get("Post Error")),
+                    "status": _select_name(props.get("Status")),
+                    "first_sent": _date_start(props.get("First Sent")),
+                    "last_sent": _date_start(props.get("Last Sent")),
+                    "thread_ref": _plain_text(props.get("Thread Ref")),
+                }
+            )
+        return rows
+
+    def set_author_contact(
+        self,
+        page_id: str,
+        email: str = "",
+        x_handle: str = "",
+        linkedin: str = "",
+        affiliation: str = "",
+        status: str | None = None,
+    ) -> None:
+        """Fill contact fields found by research (research_authors.py). Only
+        non-empty values are written, so existing fields are never cleared."""
+        properties: dict = {}
+        if email:
+            properties["Email"] = {"email": email}
+        if x_handle:
+            properties["X Handle"] = {"rich_text": [{"text": {"content": x_handle}}]}
+        if linkedin:
+            properties["LinkedIn"] = {"url": linkedin}
+        if affiliation:
+            properties["Affiliation"] = {"rich_text": [{"text": {"content": affiliation[:2000]}}]}
+        if status:
+            properties["Status"] = {"select": {"name": status}}
+        if properties:
+            self.update_page(page_id, properties)
+
+    def get_sent_messages(self, database_id: str, limit: int = 5) -> list[str]:
+        """Most recently sent outreach messages — used as tone examples so new
+        drafts sound like what the user actually sends, not a generic default."""
+        pages = self.query_database(
+            database_id,
+            filter_={"property": "Status", "select": {"equals": "Sent"}},
+            sorts=[{"timestamp": "last_edited_time", "direction": "descending"}],
+        )
+        messages = []
+        for page in pages[:limit]:
+            text = _plain_text(page["properties"].get("Message"))
+            if text:
+                messages.append(text)
+        return messages
+
+    def set_author_message(
+        self,
+        page_id: str,
+        message: str,
+        status: str,
+        send_via: str | None = None,
+        subject: str | None = None,
+        post_error: str | None = None,
+    ) -> None:
+        """`subject` is Email-only — a channel with no subject line (X,
+        LinkedIn) simply never passes one, and the Subject column stays
+        blank for that row. `send_via` is only ever passed by a human
+        explicitly picking a channel elsewhere in Notion — drafting never
+        sets it. `post_error` records what went wrong on a send attempt
+        (LinkedIn's lack of a send API, a failed Gmail/X call, etc.) for a
+        human to read directly in Notion; pass `""` to clear a stale error
+        after a later successful send."""
+        properties: dict = {
+            "Message": {"rich_text": [{"text": {"content": message[:2000]}}]},
+            "Status": {"select": {"name": status}},
+        }
+        if send_via:
+            properties["Send Via"] = {"select": {"name": send_via}}
+        if subject is not None:
+            properties["Subject"] = {"rich_text": [{"text": {"content": subject[:2000]}}]}
+        if post_error is not None:
+            properties["Post Error"] = {"rich_text": [{"text": {"content": post_error[:2000]}}]}
+        self.update_page(page_id, properties)
+
+    # --- Follow-ups (send_followups.py) ---
+
+    def record_initial_send(self, page_id: str, thread_ref: str | None, sent_date: str) -> None:
+        """Called once, right after the initial message actually sends.
+        `thread_ref` is the Gmail thread id for Email (used to reply within
+        the same thread and to check it for a reply); left unset for X, since
+        the participant id is cheap to re-resolve from the handle on demand."""
+        properties: dict = {
+            "First Sent": {"date": {"start": sent_date}},
+            "Last Sent": {"date": {"start": sent_date}},
+        }
+        if thread_ref:
+            properties["Thread Ref"] = {"rich_text": [{"text": {"content": thread_ref[:2000]}}]}
+        self.update_page(page_id, properties)
+
+    def record_followup(self, page_id: str, followup_number: int, message: str, status: str, sent_date: str) -> None:
+        self.update_page(
+            page_id,
+            {
+                f"Followup {followup_number} Message": {"rich_text": [{"text": {"content": message[:2000]}}]},
+                "Status": {"select": {"name": status}},
+                "Last Sent": {"date": {"start": sent_date}},
+            },
+        )
+
+    def set_author_status(self, page_id: str, status: str) -> None:
+        self.update_page(page_id, {"Status": {"select": {"name": status}}})
+
     def update_page(self, page_id: str, properties: dict) -> None:
         response = requests.patch(
             f"{BASE_URL}/pages/{page_id}",
@@ -333,4 +545,13 @@ class NotionClient:
         self.update_page(
             page_id,
             {"Post Error": {"rich_text": [{"text": {"content": message[:2000]}}]}},
+        )
+
+    def mark_response_row_posted(self, page_id: str) -> None:
+        self.update_page(
+            page_id,
+            {
+                "Status": {"select": {"name": "Posted"}},
+                "Post Error": {"rich_text": []},
+            },
         )

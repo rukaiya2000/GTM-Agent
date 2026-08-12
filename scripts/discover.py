@@ -1,7 +1,7 @@
 """Find posts worth engaging with and stage them in the Response Calendar.
 
 Sources come from interests.md (accounts + topics). Ranking is plain engagement
-math — no LLM — so re-running is cheap and deterministic. The curate-discoveries
+math — no LLM — so re-running is cheap and deterministic. The draft-x-replies
 skill does the relevance judgment afterwards, using the `status` column
 (Commented / Rejected / not-commented) on existing rows as signal.
 """
@@ -17,7 +17,7 @@ from gtm_agent.ranking import rank_tweets
 from gtm_agent.store import Store
 from gtm_agent.x_client import XApiError, XClient, full_text
 
-DEFAULT_LIMIT = 15
+DEFAULT_LIMIT = 10
 PER_ACCOUNT = 20
 PER_TOPIC = 20
 TWEET_ID_RE = re.compile(r"/status/(\d+)")
@@ -125,6 +125,16 @@ def main() -> int:
         print("Nothing fetched.")
         return 1
 
+    # Stage only thread heads and standalone posts. A tweet whose
+    # conversation_id differs from its own id is a reply — including the
+    # author's own "2/ 3/ ..." thread continuations, which read as fragments
+    # out of context. The thread itself is still used: reply drafting reads
+    # the full thread from the head's URL.
+    heads = [t for t in tweets if t.get("conversation_id", t["id"]) == t["id"]]
+    if len(heads) < len(tweets):
+        print(f"Skipped {len(tweets) - len(heads)} thread-continuation post(s); staging heads only.")
+    tweets = heads
+
     try:
         existing = notion.get_response_calendar_rows(db_id)
     except NotionApiError as e:
@@ -138,7 +148,10 @@ def main() -> int:
     candidates = [
         t for t in tweets if t["id"] in fresh_ids and t["id"] not in already
     ]
-    store.mark_seen([t["id"] for t in tweets])
+    # A preview shouldn't consume the pool: the seen-set is only updated on a
+    # real staging run (below, after the dry-run early exit).
+    if not args.dry_run:
+        store.mark_seen([t["id"] for t in tweets])
 
     if not candidates:
         print(f"Fetched {len(tweets)} post(s), all previously seen or already staged.")
@@ -171,7 +184,7 @@ def main() -> int:
     print(f"\nStaged {written} post(s) to Response Calendar as Status = New.")
     if failed:
         print(f"{failed} failed to write.")
-    print("Next: run the curate-discoveries skill to prune by past signal.")
+    print("Next: run the draft-x-replies skill to prune by past signal.")
     return 0
 
 

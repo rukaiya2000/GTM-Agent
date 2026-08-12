@@ -1,11 +1,15 @@
 """Feed replies you actually sent into the voice corpus.
 
 A reply you chose and posted is as much your voice as an original post, but it
-only lives in Notion. This copies it into voice_corpus.json so draft-replies and
-polish-tweet can learn from it.
+only lives in Notion. This copies it into voice_corpus.json so
+draft-x-replies and polish-x-drafts can learn from it.
 
-Reads rows where `Posted` is checked and `Selected` names a reply with text.
-`Selected = Like/RT` is skipped — there's no text to learn from.
+Reads rows with `Status = Posted` where `Selected` names something with text:
+a reply field (learned as post_type "reply") or a quote-retweet's
+`Retweet Message` (learned as post_type "quote"). Plain retweets (empty
+`Retweet Message`) are skipped — there's no text to learn from. This is a
+backfill for anything posted outside `scripts/post_response_calendar.py`
+(which already writes to the corpus at post time) — e.g. rows posted by hand.
 """
 
 from gtm_agent.config import ConfigError, get_response_calendar_db_id
@@ -34,30 +38,39 @@ def main() -> int:
     added, skipped_no_text, skipped_dupe = 0, 0, 0
 
     for row in rows:
-        if not row["posted"] or not row["selected"]:
+        if row["review_status"] != "Posted" or not row["selected"]:
             continue
 
-        text = NotionClient.selected_reply_text(row).strip()
-        if not text:
-            skipped_no_text += 1
-            continue
+        if row["selected"] == "Retweet":
+            # A quote-retweet's message is authored text in the user's voice;
+            # a plain retweet (empty message) carries nothing to learn.
+            text = row["retweet_message"].strip()
+            post_type = "quote"
+            if not text:
+                continue
+        else:
+            text = NotionClient.selected_reply_text(row).strip()
+            post_type = "reply"
+            if not text:
+                skipped_no_text += 1
+                continue
 
         was_added = append_tweet(
             text,
-            post_type="reply",
+            post_type=post_type,
             tweet_id=f"{NOTION_ID_PREFIX}{row['id']}",
             posted_url=row["url"],
         )
         added += was_added
         skipped_dupe += not was_added
 
-    print(f"Added {added} sent repl(ies) to {CORPUS_PATH} as post_type=reply.")
+    print(f"Added {added} sent repl(ies)/quote(s) to {CORPUS_PATH}.")
     if skipped_dupe:
         print(f"  {skipped_dupe} already in the corpus.")
     if skipped_no_text:
         print(
             f"  {skipped_no_text} marked Posted but had no reply text "
-            "(Like/RT, or the Selected field points at an empty reply)."
+            "(the Selected field points at an empty reply)."
         )
     return 0
 

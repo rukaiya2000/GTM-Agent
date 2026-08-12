@@ -6,9 +6,12 @@ from gtm_agent.x_client import (
     ArticlePublishError,
     ThreadPostError,
     XApiError,
+    get_authenticated_user_id,
     post_article,
     post_thread,
     post_tweet,
+    retweet,
+    tweet_id_from_url,
 )
 
 THREAD_SEPARATOR_RE = re.compile(r"\n\s*---\s*\n")
@@ -191,3 +194,104 @@ def _record_error(notion: NotionClient, page_id: str, message: str) -> str:
         return message
     except NotionApiError as notion_err:
         return f"{message} (also failed to record Post Error in Notion: {notion_err})"
+
+
+REPLY_FIELDS = {"Reply 1", "Reply 2", "Reply 3", "Self-Written Reply"}
+
+
+def post_response_calendar_row(
+    notion: NotionClient, row: dict, access_token: str
+) -> tuple[bool, str]:
+    """Post a Response Calendar row's chosen engagement: a reply, a plain
+    retweet, or a quote-retweet (Retweet Message set). `Selected` decides
+    which; there's no Like path — that action was cut entirely."""
+    selected = row.get("selected")
+    tweet_id = tweet_id_from_url(row["url"] or "")
+    if not tweet_id:
+        return False, _record_error(
+            notion,
+            row["id"],
+            f"Row {row['id']} has no usable Original Tweet URL to reply/retweet to.",
+        )
+
+    if selected in REPLY_FIELDS:
+        return _post_reply(notion, row, tweet_id, access_token)
+    if selected == "Retweet":
+        return _post_retweet(notion, row, tweet_id, access_token)
+    return (
+        False,
+        f"Row {row['id']} has Selected={selected!r}, which this script doesn't "
+        "post (expected a reply field or Retweet). Skipped, left as-is.",
+    )
+
+
+def _post_reply(
+    notion: NotionClient, row: dict, tweet_id: str, access_token: str
+) -> tuple[bool, str]:
+    text = NotionClient.selected_reply_text(row).strip()
+    if not text:
+        return False, _record_error(
+            notion, row["id"], f"Row {row['id']} has no text in its selected reply field."
+        )
+    if len(text) > MAX_TWEET_CHARS:
+        return False, _record_error(
+            notion,
+            row["id"],
+            f"Row {row['id']} reply is {len(text)} chars, over the {MAX_TWEET_CHARS} limit.",
+        )
+
+    try:
+        result = post_tweet(text, access_token, reply_to_tweet_id=tweet_id)
+    except XApiError as e:
+        return False, _record_error(notion, row["id"], f"Reply failed: {e}")
+
+    new_id = result["data"]["id"]
+    posted_url = f"https://x.com/i/web/status/{new_id}"
+    return _finish_response_row(notion, row["id"], text, "reply", new_id, posted_url)
+
+
+def _post_retweet(
+    notion: NotionClient, row: dict, tweet_id: str, access_token: str
+) -> tuple[bool, str]:
+    message = row["retweet_message"].strip()
+
+    if message:
+        try:
+            result = post_tweet(message, access_token, quote_tweet_id=tweet_id)
+        except XApiError as e:
+            return False, _record_error(notion, row["id"], f"Quote-retweet failed: {e}")
+        new_id = result["data"]["id"]
+        posted_url = f"https://x.com/i/web/status/{new_id}"
+        return _finish_response_row(
+            notion, row["id"], message, "quote", new_id, posted_url
+        )
+
+    try:
+        user_id = get_authenticated_user_id(access_token)
+        retweet(user_id, tweet_id, access_token)
+    except XApiError as e:
+        return False, _record_error(notion, row["id"], f"Retweet failed: {e}")
+
+    try:
+        notion.mark_response_row_posted(row["id"])
+    except NotionApiError as e:
+        return True, f"Retweeted (no message, nothing to learn from) but failed to update Notion: {e}"
+    return True, "Retweeted (no message, nothing to learn from)."
+
+
+def _finish_response_row(
+    notion: NotionClient,
+    page_id: str,
+    text: str,
+    post_type: str,
+    tweet_id: str,
+    posted_url: str,
+) -> tuple[bool, str]:
+    try:
+        notion.mark_response_row_posted(page_id)
+    except NotionApiError as e:
+        append_tweet(text, post_type=post_type, tweet_id=tweet_id, posted_url=posted_url)
+        return True, f"Posted ({posted_url}) but failed to update Notion: {e}"
+
+    append_tweet(text, post_type=post_type, tweet_id=tweet_id, posted_url=posted_url)
+    return True, f"Posted: {posted_url}"

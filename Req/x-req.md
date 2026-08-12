@@ -34,7 +34,7 @@ They share nothing except the X API client and are built/shipped separately.
 2. **Topic search availability is unverified on pay-per-use.** Reading specific accounts' timelines is fine. "Topics" needs the **recent-search** endpoint (`/2/tweets/search/recent`, ~last 7 days). **Full-archive search is Enterprise-only (~$42k/mo).** You must confirm in the developer portal whether recent-search is callable on your pay-per-use account. If not, "topics" collapses to "topics as seen through tracked accounts."
 3. **Every read costs money, per call.** Cost = cadence × accounts × depth. This makes the seen-set and caching non-optional.
 4. **Scheduling requires an always-on worker.** The X API does not hold a schedule; *your* system owns the queue and fires posts at their target time. Skill B needs a cron/long-running worker; Skill A does not.
-5. **No auto-engagement.** Auto-like/auto-reply is the pattern X suspends accounts for. Skill A surfaces; you engage.
+5. **No auto-*selection* of engagement, and no auto-like.** Auto-like/auto-reply is the pattern X suspends accounts for — but that's about a bot deciding what to engage with, not about who clicks "post." Skill A still only surfaces; you still choose the action and text. What *is* automated (as of the Response Calendar posting flow, `publish-x-replies`): firing an already-human-chosen reply or retweet at an already-human-set scheduled time, via `scripts/post_response_calendar.py`. `Like` stays out of scope — no authored text to justify it, and it's the specific action named above.
 
 ---
 
@@ -127,6 +127,8 @@ They share nothing except the X API client and are built/shipped separately.
 
 - Graph DB / context graph — not needed for these two skills; belongs to the relationship side you've deferred.
 - Hermes / agent runtime — the only LLM step here is "polish," a single call, not an agent chain.
-- Auto-like / auto-reply / any automated engagement.
+- Auto-*like*, and any auto-*selection* of what to engage with (the model
+  choosing on its own). Posting an already-human-chosen reply/retweet at an
+  already-human-set scheduled time is now in scope — see hard constraint #5.
 - Unanswered-message handling — deferred by your call.
 - Impression-based ranking — data isn't available for others' posts.

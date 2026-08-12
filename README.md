@@ -37,6 +37,7 @@ have since been overtaken by platform changes, which are noted inline below.
 - [Configuration](#configuration)
 - [Pipeline 1: Engagement](#pipeline-1-engagement)
 - [Pipeline 2: Publishing](#pipeline-2-publishing)
+- [Pipeline 3: Paper outreach](#pipeline-3-paper-outreach)
 - [The voice corpus](#the-voice-corpus)
 - [Project layout](#project-layout)
 - [Project status](#project-status)
@@ -102,15 +103,12 @@ Finds other people's posts worth replying to.
                         └────────────┬────────────────────┘
                                      ▼
                             Response Calendar
-                          Status=New, Source=…
+                          Status=New, drafts filled
                                      │
                                      ▼
-                            curate-discoveries
-                       prunes using your `status` signal
-                                     │
-                                     ▼
-                             draft-replies ──reads──▶ voice_corpus.json
-                        writes Reply 1 / 2 / 3                ▲
+                          draft-x-replies ──reads──▶ voice_corpus.json
+                      prunes with your `status` signal,       ▲
+                      then writes Reply 1 / 2 / 3             │
                                      │                        │
                                      ▼                        │
                         YOU pick one (`Selected`)             │
@@ -135,7 +133,7 @@ Turns rough notes into posts.
   Stage = Ready for AI Review
         │
         ▼
-  polish-tweet skill ──reads──▶ voice_corpus.json
+  polish-x-drafts skill ──reads──▶ voice_corpus.json
         │                              ▲
         ▼                              │
   Final Text written                   │ appended on every
@@ -177,6 +175,9 @@ curation, reply drafting.
 - X Premium, if you intend to publish long-form Articles
 - A Notion workspace, with an internal integration you can create
 - Claude Code, for the skill-based steps
+- An OpenAI API key, if you intend to use the paper-outreach pipeline
+- A Google Cloud OAuth client with the Gmail API enabled, if you intend to send outreach email
+- Claude Code plus the `research` extra (`pip install -e ".[research]"`), only for the optional author-research step
 
 ## Installation
 
@@ -193,15 +194,27 @@ Populate `.env` with the following:
 | Variable | Required for | How to obtain |
 |---|---|---|
 | `X_BEARER_TOKEN` | all read operations | X developer portal, app-only bearer token. Requires pay-per-use credits. |
-| `X_CLIENT_ID`, `X_CLIENT_SECRET` | publishing | Same app, under User authentication settings. Read and write, confidential client, callback `http://127.0.0.1:8765/callback` |
+| `X_CLIENT_ID`, `X_CLIENT_SECRET` | publishing, X DMs | Same app, under User authentication settings. Read and write, confidential client, callback `http://127.0.0.1:8765/callback`. DM sending additionally needs the `dm.write` scope. |
+| `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET` | outreach email | Google Cloud OAuth client (Desktop app type), Gmail API enabled |
 | `NOTION_API_TOKEN` | all Notion access | notion.so/my-integrations, then share the target page with the integration |
 | `NOTION_TWEET_DRAFTS_DB_ID` | publishing | Written automatically by `setup.py` |
 | `NOTION_RESPONSE_CALENDAR_DB_ID` | engagement | The Response Calendar database ID |
 | `NOTION_DISCOVERY_DB_ID` | account discovery | The Discovery Database ID |
+| `NOTION_PAPER_OUTREACH_DB_ID` | paper outreach | The Paper Outreach database ID (created by hand, see [Pipeline 3](#pipeline-3-paper-outreach)) |
+| `NOTION_PAPER_AUTHORS_DB_ID` | paper outreach | The Paper Authors database ID (created by hand, same section) |
+| `OPENAI_API_KEY` | paper outreach | Drafts blurbs and outreach messages. Everything else in the pipeline is required. |
+| `OPENAI_MODEL` | paper outreach | Optional, defaults to `gpt-4o-mini` |
+| `OPENALEX_MAILTO` | paper outreach | Optional, a contact address puts paper lookups on OpenAlex's faster polite pool |
+| `SEMANTIC_SCHOLAR_API_KEY` | paper outreach | Optional, but without one Semantic Scholar rate-limits nearly every request |
+| `OUTREACH_FOLLOWUP1_DAYS`, `OUTREACH_FOLLOWUP2_DAYS` | paper outreach follow-ups | Optional, default 6 and 10. See [Following up](#following-up) |
 
 `NOTION_API_TOKEN` is distinct from Claude Code's own Notion connection. The
 latter exists only inside a live chat session, whereas the posting scripts run
 unattended and require their own credential.
+
+The X and Gmail credentials each require setting up an OAuth app in the
+respective developer console — [docs/credentials.md](docs/credentials.md)
+walks through both, click by click.
 
 ### Initial setup
 
@@ -221,6 +234,12 @@ run a second time unless invoked with `--force-new-db`.
 `x_oauth_login.py` opens a browser for authorization, captures the redirect on
 `127.0.0.1:8765`, and stores a refreshable token in `x_oauth_token.json` (which is
 gitignored). Re-run it if that file is deleted or the refresh token is revoked.
+It also grants the `dm.write` scope, needed for `send_outreach.py` to send X DMs.
+
+`gmail_oauth_login.py` is the equivalent for outreach email: it captures the
+redirect on `127.0.0.1:8766` and stores a refreshable token in
+`gmail_oauth_token.json` (gitignored), scoped to `gmail.send` only. Only needed
+for the paper-outreach pipeline.
 
 ## Pipeline 1: Engagement
 
@@ -253,11 +272,13 @@ approved it.
 .venv/bin/python scripts/harvest_and_rank.py      # legacy: prints only, accounts only
 ```
 
-Fetches from configured accounts and topics, ranks by engagement, deduplicates
-against both a local seen-set (`gtm_agent.db`) and rows already present in the
-Response Calendar, then writes the top `--limit` results (default 15) with
-`Status = New`. All operations against X are read-only; the script never likes,
-replies, or posts.
+Fetches from configured accounts and topics, drops thread continuations
+(`2/ 3/ …` self-replies — only thread heads and standalone posts are staged;
+reply drafting reads the full thread from the head for context), ranks by
+engagement, deduplicates against both a local seen-set (`gtm_agent.db`) and
+rows already present in the Response Calendar, then writes the top `--limit`
+results (default 10) with `Status = New`. All operations against X are
+read-only; the script never likes, replies, or posts.
 
 ### Monitoring mentions
 
@@ -267,56 +288,73 @@ replies, or posts.
 
 Replies to your posts, @-mentions, and quotes are otherwise invisible to the
 system. These are staged into the same Response Calendar, so curation and reply
-drafting operate on them unchanged. The `Source` property distinguishes
-`discovery` from `mention`; mentions generally warrant a faster response.
+drafting operate on them unchanged.
 
 ### Curating
 
-The `curate-discoveries` skill runs the discovery script, then prunes the staged
-results based on what you have engaged with previously.
+The `draft-x-replies` skill runs the discovery script, drafts the full option
+set on every new row, and *advises* on priority in its report — but it never
+changes `Status` on its own. Rows arrive as `New` and stay `New` until you
+review them in Notion: reject the junk, mark the keepers, promote what you
+want to send. The skill's relevance ranking (from your standing criteria plus
+what you've previously `Posted` versus `Rejected`) exists to make that review
+fast, not to replace it.
 
-**Important:** the Response Calendar contains two status properties whose names
-differ only by capitalization. Notion matches property names exactly, so
-confusing the two fails silently.
+**Important:** `Status` is the Response Calendar's single lifecycle column:
 
-| Property | Values | Written by |
+| Value | Meaning | Set by |
 |---|---|---|
-| `Status` | `New`, `Reviewed`, `Stale`, `Rejected (irrelevant)`, `Rejected (IDK what to say)` | the pipeline |
-| `status` | `Commented`, `Rejected`, `not-commented` | you only |
+| `New` | freshly staged by discovery, drafts filled in | the pipeline |
+| `Reviewed` | you looked at it, worth keeping around | you |
+| `Ready to post` | option chosen, ready to send | you (or the skill, on your ask) |
+| `Posted` | you actually replied on X | **you only** |
+| `Stale` / `Rejected (irrelevant)` / `Rejected (IDK what to say)` | exits | you |
 
-The lowercase `status` is the learning signal. `Commented` is positive evidence,
-`Rejected` is negative, and `not-commented` is explicitly neutral: no reply
-occurred, but the content was not necessarily unsuitable. The skill reads this
-property and writes only the capitalized `Status`. Writing the lowercase property
-would corrupt the signal the skill depends on.
+`Posted` doubles as the learning signal: it is positive evidence, the
+`Rejected (…)` values are negative, and everything else is explicitly
+neutral — no reply occurred, but the content was not necessarily unsuitable.
+The skill never sets `Posted`; doing so would corrupt the signal it depends
+on. The row also carries `Added Date`, when it entered the calendar
+(`Original Tweet Date` records when the post itself was tweeted).
 
 ### Drafting replies
 
-The `draft-replies` skill populates `Reply 1`, `Reply 2`, and `Reply 3` on staged
-rows with three substantively different angles, written in your voice from the
-same `voice_corpus.json` used by the publishing pipeline. This is the connection
-between the two pipelines: discovery locates the post, and the corpus supplies
-the voice.
+The `draft-x-replies` skill routes each newly staged row: tweets referencing
+external content (links, quote-tweets, threads, named papers/repos) get a
+research subagent — all spawned in parallel — that resolves the links, reads
+the thread, looks the sources up on the web, and only then drafts;
+self-contained tweets (pure opinions, quips) are drafted directly with no
+subagent, so tokens go to research only where research exists to do. Every
+row ends up with `Reply 1/2/3` (three substantively different angles) plus a
+suggested `Retweet Message` (clear it for a plain retweet), written in your
+voice from the same `voice_corpus.json` used by the publishing pipeline.
+Rows whose links can't be resolved are flagged as shallower in the report. This is the connection
+between the two pipelines: discovery locates the post, and the corpus
+supplies the voice.
 
-You then set `Selected` to your preferred option and reply manually on X. Nothing
-in this system posts on your behalf. Automated engagement is the primary cause of
-account suspensions (`x-req.md` §2.5), so the API is never used to reply.
+You then set `Selected` to your preferred option (editing that reply field in
+place if you want changes), a `Scheduled Time`, and flip `Status = Ready to
+post` — by hand, or by asking the skill to stage it. `draft-x-replies` itself
+never posts: it writes the three `Reply` fields and recommends one, sets
+`Selected` and `Ready to post` only when you tell it to, and never sets
+`Posted` — that records what actually went out.
 
-The skill writes only the three `Reply` fields. `Selected`, `Approved`, `Posted`,
-`Self-Written Reply`, and the lowercase `status` all record your decisions, and
-are never modified.
+Posting the staged queue is a separate, explicitly-invoked step —
+`publish-x-replies` / `scripts/post_response_calendar.py` — not something
+that runs unattended off drafting. It posts rows whose `Scheduled Time` has
+passed: the selected reply, or a plain/quote retweet depending on `Selected`.
+There is deliberately no `Like` action — auto-like is the specific pattern
+`x-req.md` §2.5 calls out as the cause of account suspensions, and a like has
+no authored text to justify automating it, so it was cut from `Selected`
+entirely rather than wired up.
 
-Once you have replied, set `Selected` and tick `Posted`, then run:
-
-```bash
-.venv/bin/python scripts/sync_replies.py
-```
-
-This copies the reply you actually sent into `voice_corpus.json` with
-`post_type: "reply"`, so future reply drafts learn from your real replies rather
-than only from your original posts. Rows with `Selected = Like/RT` are skipped, as
-there is no text to learn from. Replies are keyed by Notion page ID rather than
-tweet ID (since you posted manually), so the script is safe to re-run.
+On success the script appends the posted text to `voice_corpus.json` itself
+(`post_type: "reply"` or `"quote"`), so replies/quotes posted this way don't
+need a separate corpus-sync step. `scripts/sync_replies.py` still exists as a
+backfill for anything posted outside this flow — e.g. by hand, directly on
+X — keyed by Notion page ID so it's safe to re-run on rows already marked
+`Posted` manually. Plain retweets carry no text either way, so nothing is
+harvested for those.
 
 ### API constraints
 
@@ -340,7 +378,7 @@ Place your rough notes in the page body of a `Tweet Drafts` row, set
 `Stage = Ready for AI Review`, and set `post-type` to `single-thread`,
 `multi-thread`, or `article`.
 
-The `polish-tweet` skill rewrites the note in your voice, writes the result to
+The `polish-x-drafts` skill rewrites the note in your voice, writes the result to
 `Final Text`, and sets `Stage = Ready for Human Review`. There is no chat approval
 step; review takes place in Notion.
 
@@ -367,7 +405,7 @@ In Notion, choose one of the following:
 .venv/bin/python scripts/post_all_due.py    # all due rows, oldest first
 ```
 
-Alternatively, ask Claude to post your ready tweets; the `post-ready-tweets` skill
+Alternatively, ask Claude to post your ready tweets; the `publish-x-queue` skill
 is a thin wrapper around `post_all_due.py`.
 
 Both scripts act only on rows where `Stage = Ready to post` and `Scheduled Time`
@@ -395,10 +433,170 @@ intervention.
 - **An Article draft created but not published.** The draft exists on X. The error
   message records the draft ID. Retrying would create a second draft.
 
+## Pipeline 3: Paper outreach
+
+A separate, Notion-only workflow for reaching out to research paper authors.
+It does not share the voice corpus or the review-gate machinery above; see
+`Req/paper-outreach.md` for the original feature idea. Discovery, drafting,
+sending, reply detection, and a two-step follow-up cadence are implemented;
+meeting scheduling and calendar sync are not.
+
+### Setup
+
+Unlike the Tweet Drafts database, the two databases this pipeline needs are
+not created for you. In Notion, create:
+
+- **Paper Outreach**: `Paper Name` (title), `Paper link` (url), `Notes`
+  (text), `Status` (select: `New`, `Needs Review`, `Blurb Ready`), `Blurb`
+  (text)
+- **Paper Authors**: `Author` (title), `Paper` (relation to Paper Outreach),
+  `Role` (select: `Corresponding`, `Co-author`), `Affiliation` (text), `Email`
+  (email), `X Handle` (text), `LinkedIn` (url), `Selected` (checkbox, not
+  currently used by any script — `Send Via` is what authorizes a send),
+  `Send Via` (select: `Email`, `X`, `LinkedIn` — left blank by drafting, set
+  by hand when you're ready to send), `Subject` (text, Email only — X/LinkedIn
+  DMs have no subject line and leave it blank), `Message` (text, body only),
+  `Post Error` (text, what went wrong on a failed/skipped send — cleared on a
+  later successful send), `Status` (select: `Needs Handles`, `Draft Ready`,
+  `Needs Review`, `Message Drafted`, `Sent`, `Followup 1 Sent`,
+  `Followup 2 Sent`, `Replied`), `First Sent` (date), `Last Sent` (date),
+  `Thread Ref` (text), `Followup 1 Message` (text), `Followup 2 Message`
+  (text)
+
+The last five Paper Authors fields (`First Sent` through `Followup 2
+Message`) are only used by the follow-up cadence described below — skip them
+if you only intend to send a single message per author by hand.
+
+Share both with your Notion integration, then set `NOTION_PAPER_OUTREACH_DB_ID`
+and `NOTION_PAPER_AUTHORS_DB_ID` in `.env`.
+
+### Running it
+
+Add a paper to the Paper Outreach database with a `Paper Name` and,
+ideally, a `Paper link` (arXiv, DOI, or title also works), then:
+
+```bash
+.venv/bin/python scripts/fetch_paper_authors.py               # run 1: resolve authors, fetch handles, draft the blurb
+.venv/bin/python scripts/fetch_paper_authors.py --all-authors  # fetch every author instead of just the top 5
+```
+
+This resolves the paper via OpenAlex (falling back to Semantic Scholar),
+stages its top authors — corresponding authors first, since author order
+itself is a signal — into Paper Authors, and writes a `Blurb` from the
+abstract plus your `Notes`. Emails are filled in only when the arXiv PDF
+itself states one; X handles come from a homepage on file or, failing that, a
+best-effort X search that is marked low-confidence and still needs a glance.
+Rows without a confirmed email or handle are left `Needs Handles` for you to
+fill in by hand — or to research automatically:
+
+```bash
+.venv/bin/pip install -e ".[research]"                       # one-time, installs claude-agent-sdk
+.venv/bin/python scripts/research_authors.py                 # run 1.5: web-research Needs Handles rows
+.venv/bin/python scripts/research_authors.py --dry-run       # research and print, write nothing
+```
+
+This optional step fans out one Claude Agent SDK subagent per `Needs
+Handles` author — each searches the open web (homepages, lab pages, Google
+Scholar, X, LinkedIn) on Haiku, in parallel, and reports only values a
+source explicitly states, with the source cited. Findings fill the empty
+contact fields and the row moves to `Needs Review` — never straight to
+`Draft Ready`, because a web match is a candidate, not a confirmation. The
+cited evidence prints to the console for your glance; fields already filled
+in are never overwritten, and rows where nothing was found stay `Needs
+Handles`. The agent is restricted to web search and fetch (no shell, no file
+writes — all Notion writes happen in the script), and unlike everything else
+in this project it spends Anthropic API tokens, capped at `--limit` authors
+per run (default 25).
+
+Then draft messages for everyone with a contact on file — this never touches
+`Send Via` at all, so nothing needs to be set in Notion first:
+
+```bash
+.venv/bin/python scripts/send_outreach.py --draft-only         # run 2: draft only, never sends
+```
+
+This drafts a `Subject` + `Message` for every author who doesn't have one
+yet and has an Email, X Handle, or LinkedIn on file, always in Email format
+(subject + body) regardless of which contact they actually have — which
+parts get used depends on whatever channel is picked at send time, not on
+this. Pulls tone from your own previously `Sent` messages as few-shot
+examples. Authors with no contact info at all are skipped and reported.
+`Status` becomes `Message Drafted`; nothing is ever sent in this mode, and
+`Send Via` is left exactly as it was (blank, unless you'd already set it
+yourself).
+
+Review the drafts in Notion, edit anything you want, and set `Send Via`
+(`Email`/`X`/`LinkedIn`) by hand on whoever you want to actually reach —
+that choice alone is what authorizes a send, nothing else is checked. Then:
+
+```bash
+.venv/bin/python scripts/send_outreach.py                     # run 3: draft (if needed) and send
+```
+
+This sends to every author with a `Send Via` set — anyone still blank is
+left alone entirely. `Send Via` also decides what gets used: `Email` sends
+the Subject + Message together; `X`/`LinkedIn` send the Message only and the
+Subject is dropped. Anyone still missing a `Message` at this point gets one
+drafted first, same as run 2. Then it attempts to send:
+
+| Channel | Requires | Behaviour |
+|---|---|---|
+| Email | `gmail_oauth_login.py` run, `Email` on file | Sends via Gmail; `Status` becomes `Sent` |
+| X | `x_oauth_login.py` run with `dm.write`, `X Handle` on file | Sends a real DM; `Status` becomes `Sent` |
+| LinkedIn | — | No third-party send API exists; always drafts and prints for you to copy-paste, `Status` stays `Message Drafted` |
+
+Whatever went wrong on a failed or skipped send (no OAuth token, no contact
+on file for that channel, LinkedIn's lack of a send API, an API error) is
+written to `Post Error` so you can see why directly in Notion; a later
+successful send clears it. A hand-written `Message` or `Subject` is always
+used as-is and never overwritten. Rows already `Sent` are skipped on re-run,
+so `send_outreach.py` is safe to run repeatedly as you fill in more authors.
+A successful Email or
+X send also records `First Sent`/`Last Sent` and, for Email, the Gmail
+thread id — what the follow-up run below needs to check for a reply and, if
+there isn't one, reply in the same thread.
+
+### Following up
+
+```bash
+.venv/bin/python scripts/send_followups.py             # run 3: check replies, send due follow-ups
+.venv/bin/python scripts/send_followups.py --dry-run   # preview without sending or updating Notion
+```
+
+Run this regularly (by hand, or on a schedule you set up yourself — there is
+no built-in cron, consistent with the rest of this project). Each run, for
+every Email/X author in `Status` `Sent`, `Followup 1 Sent`, or `Followup 2
+Sent`:
+
+1. **Checks for a reply first**, regardless of timing. If found, `Status`
+   becomes `Replied` and that author is never messaged again by this
+   pipeline.
+2. Otherwise, if enough time has passed since the last message, drafts and
+   sends the next follow-up — a short nudge, not a re-pitch — via
+   `outreach_llm.followup_message()`, using the same `Sent`-message tone
+   examples as the initial send.
+
+| Follow-up | Fires after | Configurable via |
+|---|---|---|
+| 1 | `OUTREACH_FOLLOWUP1_DAYS` (default 6) since the initial message | `.env` |
+| 2 | `OUTREACH_FOLLOWUP2_DAYS` (default 10) since Follow-up 1, not since the initial message | `.env` |
+
+After Follow-up 2, the script keeps checking for a reply on later runs but
+never sends a third message.
+
+Reply detection needs read access this pipeline didn't previously require:
+Email checks the Gmail thread for a message from anyone but you (`gmail.readonly`
+scope), X checks the DM conversation for a message from the other participant
+(`dm.read` scope). Both scopes were added to the existing OAuth flows — if your
+`gmail_oauth_token.json` or `x_oauth_token.json` predates this feature, re-run
+`gmail_oauth_login.py` / `x_oauth_login.py` to pick them up. LinkedIn has
+neither a send nor a read API, so those rows are left alone; check replies
+there yourself.
+
 ## The voice corpus
 
 `voice_corpus.json` (gitignored) is the sole source of style exemplars for
-`polish-tweet` and `draft-replies`:
+`polish-x-drafts` and `draft-x-replies`:
 
 ```json
 {
@@ -459,6 +657,7 @@ Two constraints apply:
 - `voice_corpus.json`: style exemplars
 - `gtm_agent.db`: seen-set and user ID cache
 - `x_oauth_token.json`: publishing token
+- `gmail_oauth_token.json`: outreach email token
 
 **Library** (`src/gtm_agent/`)
 
@@ -474,6 +673,12 @@ Two constraints apply:
 | `harvest.py` | Account fetch, deduplication, ranking |
 | `posting.py` | Thread and Article parsing, validation, `post_row()` |
 | `voice_corpus.py` | Corpus load, save, append, and metric attachment |
+| `gmail_oauth.py` | OAuth 2.0 PKCE login and token refresh for Gmail |
+| `gmail_client.py` | Gmail API: sending outreach email |
+| `scholar.py` | Paper/author lookup via OpenAlex and Semantic Scholar |
+| `paper_pdf.py` | Corresponding-author emails parsed from a paper's own arXiv PDF |
+| `handle_search.py` | Best-effort X handle discovery for paper authors |
+| `outreach_llm.py` | OpenAI-backed blurb and outreach message drafting |
 
 **Scripts** (`scripts/`)
 
@@ -486,20 +691,26 @@ Two constraints apply:
 | `discover_accounts.py` | Find accounts by topic; `--promote` adds approved ones to `interests.md` |
 | `check_mentions.py` | Stage replies and mentions into the Response Calendar |
 | `harvest_and_rank.py` | Legacy print-only, accounts-only variant |
-| `post_ready.py`, `post_all_due.py` | Publish due rows |
+| `post_ready.py`, `post_all_due.py` | Publish due Tweet Drafts rows |
+| `post_response_calendar.py` | Publish due Response Calendar rows (replies/retweets) |
 | `fetch_voice_corpus.py` | Seed or merge corpus entries from your timeline |
 | `fetch_metrics.py` | Attach post analytics to corpus entries |
-| `sync_replies.py` | Add sent replies to the corpus |
+| `sync_replies.py` | Backfill hand-posted replies into the corpus |
 | `sync_posted.py` | Import X history into Notion for visibility |
+| `gmail_oauth_login.py` | One-time outreach-email authorization |
+| `fetch_paper_authors.py` | Resolve a paper's authors, handles, and blurb (paper-outreach run 1) |
+| `research_authors.py` | Optional subagent web research for authors left `Needs Handles` (paper-outreach run 1.5) |
+| `send_outreach.py` | Draft and send outreach messages (paper-outreach run 2) |
+| `send_followups.py` | Check for replies, send due follow-ups (paper-outreach run 3, run repeatedly) |
 
 **Skills** (`.claude/skills/`)
 
 | Skill | Purpose |
 |---|---|
-| `polish-tweet` | Rough note to voice-matched draft |
-| `curate-discoveries` | Run discovery, prune using the `status` signal |
-| `draft-replies` | Write three reply options in your voice |
-| `post-ready-tweets` | Thin trigger for `post_all_due.py` |
+| `polish-x-drafts` | Rough note to voice-matched draft |
+| `draft-x-replies` | Run discovery, prune using the `status` signal, then write three reply options in your voice for the shortlist |
+| `publish-x-queue` | Thin trigger for `post_all_due.py` |
+| `publish-x-replies` | Thin trigger for `post_response_calendar.py` |
 
 ## Project status
 
@@ -514,20 +725,30 @@ Implemented and offline-verified:
 - Voice-matched drafting for all three post types, plus rejected-draft retry
   informed by Notion comments
 - Reply drafting sharing the publishing pipeline's voice corpus
+- Reply/retweet publishing for staged Response Calendar rows (`post_response_calendar.py`), gated on `Scheduled Time`, with `Like` deliberately unsupported
 - Publishing for all three post types, including reply-chained threads and the
   Articles API, with both partial-failure paths handled
 - Corpus seeding, automatic growth on publication, performance metric attachment,
   and sent-reply ingestion
+- Paper-outreach author resolution, handle discovery, and blurb/message
+  drafting, with real sending over Gmail and X DM
+- Paper-outreach reply detection and a two-follow-up cadence, both configurable
+- Optional parallel-subagent web research for authors missing handles
+  (`research_authors.py`), gated behind `Needs Review`
 
 Known limitations:
 
 | Limitation | Detail |
 |---|---|
 | Topic search unverified | Recent-search may not be callable on pay-per-use billing (`x-req.md` open item 2). Degrades gracefully. |
-| No automatic polling | `polish-tweet` must be invoked; it does not watch for `Ready for AI Review` rows. |
+| No automatic polling | `polish-x-drafts` must be invoked; it does not watch for `Ready for AI Review` rows. |
 | No scheduler | Publishing is manual, gated on `Scheduled Time`. |
 | Weak `sync_posted.py` deduplication | Matches on exact text rather than tweet ID, since the `Posted URL` property was removed. Avoids re-importing on every run. |
 | Articles require X Premium | A sparse `articles` bucket also means weak long-form voice matching until several are published. |
+| Paper-outreach follow-ups are capped at two | Matches the requested cadence; nothing is sent after Follow-up 2 goes unanswered, and meeting scheduling/calendar sync from `Req/paper-outreach.md` remain unimplemented. |
+| Paper Outreach/Paper Authors databases are hand-created | Unlike Tweet Drafts, `setup.py` does not provision them; see [Pipeline 3](#pipeline-3-paper-outreach). |
+| LinkedIn outreach send and reply tracking are stubs | No third-party LinkedIn API exists for either, so those rows always draft for manual copy-paste and are excluded from `send_followups.py`. |
+| Author research spends Anthropic tokens | `research_authors.py` is the one component that bills an Anthropic API key (via the Claude Agent SDK); it is optional, capped per run, and its findings always land in `Needs Review` rather than being trusted. |
 
 ## Roadmap
 
@@ -535,7 +756,7 @@ Ordered approximately by impact on day-to-day use.
 
 ### Closing the remaining manual loops
 
-- **Automatic polling.** `polish-tweet` currently must be invoked explicitly. A
+- **Automatic polling.** `polish-x-drafts` currently must be invoked explicitly. A
   watcher that picks up `Ready for AI Review` rows would make the publishing
   pipeline self-feeding: drop a rough note into Notion, return to a finished
   draft.
@@ -576,8 +797,10 @@ Ordered approximately by impact on day-to-day use.
 - **Context graph** of prior conversations, allowing replies to reference
   history. `x-req.md` cut this deliberately. It becomes worthwhile only once reply
   volume exceeds what you can track yourself.
-- **Direct message handling.** Cut by choice, and reasonably kept cut: direct
-  messages carry higher stakes at lower volume than public replies.
+- **Direct message handling for the engagement pipeline.** Cut by choice, and
+  reasonably kept cut: direct messages carry higher stakes at lower volume
+  than public replies. (X DM sending does now exist, but only as a one-shot
+  send within the separate [paper-outreach pipeline](#pipeline-3-paper-outreach).)
 
 ### Explicitly out of scope
 

@@ -1,7 +1,7 @@
 """Pull performance data for your own posts into the voice corpus.
 
 Turns voice_corpus.json from a flat style reference into a feedback loop:
-polish-tweet can then prefer exemplars that actually landed instead of treating
+polish-x-drafts can then prefer exemplars that actually landed instead of treating
 every past post as equally good.
 
 Private metrics (impressions, profile clicks) exist only for your own tweets from

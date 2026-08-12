@@ -1,3 +1,4 @@
+import re
 import time
 
 import requests
@@ -58,7 +59,7 @@ class XClient:
             params={
                 "query": query,
                 "max_results": max_results,
-                "tweet.fields": "public_metrics,created_at,note_tweet",
+                "tweet.fields": "public_metrics,created_at,note_tweet,conversation_id",
                 "expansions": "author_id",
                 # name/description/public_metrics are what account discovery
                 # needs to show who an author is and filter by follower count.
@@ -75,8 +76,10 @@ class XClient:
         params = {
             "max_results": max_results,
             # note_tweet carries the full text of long posts (>280 chars, Premium).
-            # Without it, `text` is truncated for those.
-            "tweet.fields": "public_metrics,created_at,note_tweet",
+            # Without it, `text` is truncated for those. conversation_id lets
+            # discovery drop self-thread continuations, which X lets through
+            # `exclude=replies` in practice.
+            "tweet.fields": "public_metrics,created_at,note_tweet,conversation_id",
             "exclude": "retweets,replies",
         }
         if pagination_token:
@@ -180,16 +183,85 @@ def _post(path: str, access_token: str, body: dict | None = None) -> dict:
 
 
 def post_tweet(
-    text: str, access_token: str, reply_to_tweet_id: str | None = None
+    text: str,
+    access_token: str,
+    reply_to_tweet_id: str | None = None,
+    quote_tweet_id: str | None = None,
 ) -> dict:
     """Post a tweet.
 
     Pass reply_to_tweet_id to chain this tweet as a reply to a previous one —
-    that's how threads are built, one call per tweet."""
+    that's how threads are built, one call per tweet. Pass quote_tweet_id to
+    quote-tweet another post instead (the two are mutually exclusive)."""
     body = {"text": text}
     if reply_to_tweet_id:
         body["reply"] = {"in_reply_to_tweet_id": reply_to_tweet_id}
+    if quote_tweet_id:
+        body["quote_tweet_id"] = quote_tweet_id
     return _post("/tweets", access_token, body)
+
+
+def retweet(user_id: str, tweet_id: str, access_token: str) -> dict:
+    """Retweet (repost) another tweet as-is, no added text."""
+    return _post(f"/users/{user_id}/retweets", access_token, {"tweet_id": tweet_id})
+
+
+TWEET_ID_RE = re.compile(r"(\d+)(?:\?.*)?$")
+
+
+def tweet_id_from_url(url: str) -> str | None:
+    """Pull the numeric tweet id off the end of a tweet URL (e.g.
+    https://x.com/user/status/1234567890)."""
+    match = TWEET_ID_RE.search(url.rstrip("/"))
+    return match.group(1) if match else None
+
+
+def send_dm(username: str, text: str, access_token: str, bearer_token: str | None = None) -> dict:
+    """Send a direct message to an X user by @handle.
+
+    The DM endpoint needs a numeric user id, not a handle, so this resolves
+    it first via a read call (app-only bearer token), then sends via the
+    user-context OAuth token — requires the dm.write scope, added to
+    x_oauth.SCOPES; re-run x_oauth_login.py if your saved token predates
+    that."""
+    participant_id = resolve_participant_id(XClient(bearer_token), username)
+    return _post(f"/dm_conversations/with/{participant_id}/messages", access_token, {"text": text})
+
+
+def resolve_participant_id(client: "XClient", username: str) -> str | None:
+    try:
+        user = client.get_user_by_username(username.lstrip("@"))
+    except XApiError:
+        return None
+    return (user.get("data") or {}).get("id")
+
+
+def get_authenticated_user_id(access_token: str) -> str:
+    """The sending account's own numeric user id — needed to tell our own
+    sent DMs apart from a reply when checking a conversation."""
+    response = requests.get(f"{BASE_URL}/users/me", headers={"Authorization": f"Bearer {access_token}"})
+    if response.status_code == 401:
+        raise XApiError(401, "unauthorized — X OAuth token missing/expired/invalid")
+    if not response.ok:
+        raise XApiError(response.status_code, response.text)
+    return response.json()["data"]["id"]
+
+
+def conversation_has_reply(participant_id: str, own_user_id: str, access_token: str) -> bool:
+    """True if the DM conversation with this participant contains a message
+    from them. Requires the dm.read scope — re-run x_oauth_login.py if your
+    saved token predates it."""
+    response = requests.get(
+        f"{BASE_URL}/dm_conversations/with/{participant_id}/dm_events",
+        headers={"Authorization": f"Bearer {access_token}"},
+        params={"max_results": 20, "dm_event.fields": "sender_id"},
+    )
+    if response.status_code == 401:
+        raise XApiError(401, "unauthorized — X OAuth token missing/expired/invalid (dm.read scope required)")
+    if not response.ok:
+        raise XApiError(response.status_code, response.text)
+    events = response.json().get("data", [])
+    return any(e.get("sender_id") == participant_id for e in events)
 
 
 class ThreadPostError(RuntimeError):
