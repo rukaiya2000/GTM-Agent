@@ -45,6 +45,10 @@ when few entries have data at all.
 If `voice_corpus.json` is missing or empty, or the relevant bucket has no entries,
 ignore it and just polish the rough note directly on its own merits.
 
+Also read `memory/x-voice.md` (repo root) — the same corpus already
+distilled into observed tone patterns, with a stated confidence level. Use
+it alongside the raw corpus entries below, not instead of them.
+
 ## Voice rules
 
 Match the author's voice, don't approximate a generic "good tweet." From the reference
@@ -127,3 +131,11 @@ draft — that's the starting point, not the original page body.
 3. Write the result to `Final Text`, set `Stage = Ready for Human Review`. For articles,
    revise `Title` too if the feedback was about the headline.
 4. Report briefly what changed and why (e.g. what feedback it addressed).
+
+## Update memory (automatic, every run)
+
+After reporting, run the procedure in `.claude/memory-update-procedure.md`
+— this skill mainly reads `memory/x-voice.md` rather than generating new
+evidence, so it's a silent no-op almost every time; it only writes if this
+run's rejection-comment handling revealed something `voice_corpus.json`
+doesn't already capture. No user request needed.

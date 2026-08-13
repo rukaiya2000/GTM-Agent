@@ -63,6 +63,13 @@ message after Follow-up 2. Report who replied, who got a follow-up, and who's
 still waiting on timing. Run this by default when the user just says "check
 outreach" with no other signal.
 
+## Update memory (automatic, every run)
+
+After reporting, run the procedure in `.claude/memory-update-procedure.md`
+against whatever this run actually sent or found replied — `memory/outreach-voice.md`
+and `memory/outreach-topics.md` are the files it can touch. No user request
+needed, and it's a silent no-op when nothing new happened.
+
 ## Notes
 
 - If a script exits with a config error (missing `NOTION_API_TOKEN`,

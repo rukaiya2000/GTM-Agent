@@ -13,6 +13,11 @@ tone, vocabulary, technical depth, and punctuation habits. If the corpus is
 missing or nearly empty, write plainly rather than inventing a voice, and
 say so.
 
+Also read `memory/x-voice.md` (repo root) — the same corpus and any posted
+replies, already synthesized into observed patterns, with an explicit
+confidence level. It supplements this file; where the two disagree, the
+binding rules below win.
+
 A reply is responsive and conversational: it assumes the original post as
 context and doesn't re-introduce what the reader can already see. A retweet
 message is closer to a broadcast: it frames the post for the author's

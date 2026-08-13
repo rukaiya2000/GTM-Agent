@@ -12,7 +12,7 @@ back what it did.
 
 This is deliberately separate from `draft-x-replies`, which never posts, and
 from `publish-x-queue`, which only knows the Tweet Drafts schema. A row only
-gets here because the author (or Claude, on the author's explicit request)
+gets here because the author (or the AI assistant, on the author's explicit request)
 set `Selected`, `Scheduled Time`, and `Status = Ready to post` in the
 Response Calendar — this skill automates firing the already-decided action
 at the already-decided time, nothing more.
@@ -52,6 +52,13 @@ at the already-decided time, nothing more.
 Unlike `publish-x-queue`, there's no multi-step partial-failure case to worry
 about — each row is a single API call, so a failure never leaves a
 partially-posted thread or an orphaned draft behind.
+
+## Update memory (automatic, every run)
+
+After reporting, run the procedure in `.claude/memory-update-procedure.md`
+against whatever this run actually posted or rejected — `memory/x-voice.md`
+and `memory/x-topics.md` are the files it can touch. No user request
+needed, and it's a silent no-op when nothing was due.
 
 ## Notes
 

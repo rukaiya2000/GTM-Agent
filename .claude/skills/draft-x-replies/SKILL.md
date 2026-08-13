@@ -18,8 +18,8 @@ Database: `ec8eb9c5f591820393d101733079983f` (Response Calendar — the single
 source of truth, on the GTM page). Fetch it first: the response names its
 `collection://…` data source id if you need SQL. **If the fetch 404s, the
 Notion connector is attached to the wrong workspace** — tell the user to point
-Claude's Notion connection at the workspace holding the GTM page; do not guess
-at a different database.
+their Notion connector/MCP server at the workspace holding the GTM page; do
+not guess at a different database.
 
 ## The row lifecycle — who sets what
 
@@ -145,11 +145,17 @@ computer/browser-use agents, tool use in enterprise workflows, long-horizon
 agentic capabilities. Flag as likely-skip: promotional posts, engagement
 bait, memes, shallow commentary, generic hype, low-info reposting, robotics
 hardware, thread fragments (the reply belongs on the head), and posts too old
-to still reply to.
+to still reply to. `memory/preferences.md` and `memory/x-topics.md` (repo
+root) hold this same list plus any accounts/topics/companies the founder has
+been observed to actually engage with — check them for anything to weigh
+alongside the criteria above.
 
 Sharpen the ranking with the learned signal where history exists: rows the
 author moved to `Posted` are positive evidence, `Rejected (…)` negative,
 everything else neutral. Thin history means low-confidence advice — say so.
+`memory/x-voice.md` and `memory/x-topics.md` already state their own
+confidence level from this same signal — defer to that rather than
+re-judging thinness from scratch.
 
 **These judgments go in your report only. Do not write them to `Status`.**
 
@@ -164,3 +170,12 @@ which option you'd send. Call out any `ungrounded` rows so the author knows
 those drafts are shallower. Then the likely-skips with a one-line reason
 each. Flag anything unusual (empty corpus, failed sources, thin signal,
 subagents redone by hand).
+
+## Update memory (automatic, every run)
+
+Phase 3 already reads every `Posted`/`Rejected (...)` row for the learned
+signal — that includes rows the founder moved since the last run, set
+directly in Notion rather than through a skill. After reporting, run the
+procedure in `.claude/memory-update-procedure.md` against that same data —
+`memory/x-voice.md` and `memory/x-topics.md` are the files it can touch. No
+user request needed, and it's a silent no-op when nothing changed.

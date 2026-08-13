@@ -46,6 +46,13 @@ on X, and neither auto-retries because retrying would make it worse:
 
 If either happens, surface it plainly with the IDs — it needs manual cleanup.
 
+## Update memory (automatic, every run)
+
+After reporting, run the procedure in `.claude/memory-update-procedure.md`
+against whatever this run actually posted — `memory/x-voice.md` is the file
+it can touch. No user request needed, and it's a silent no-op when nothing
+was due.
+
 ## Notes
 
 - If the script exits with a config error (missing `NOTION_API_TOKEN`, `X_CLIENT_ID`,

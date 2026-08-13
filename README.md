@@ -39,6 +39,7 @@ have since been overtaken by platform changes, which are noted inline below.
 - [Pipeline 2: Publishing](#pipeline-2-publishing)
 - [Pipeline 3: Paper outreach](#pipeline-3-paper-outreach)
 - [The voice corpus](#the-voice-corpus)
+- [Founder memory](#founder-memory)
 - [Project layout](#project-layout)
 - [Project status](#project-status)
 - [Roadmap](#roadmap)
@@ -165,8 +166,13 @@ Turns rough notes into posts.
 
 The split is deliberate. Anything that spends money, must be deterministic, or
 runs unattended is a Python script: fetching, deduplication, ranking, posting.
-Anything requiring judgement is a Claude Code skill: voice matching, relevance
-curation, reply drafting.
+Anything requiring judgement is a skill: voice matching, relevance curation,
+reply drafting.
+
+Skills live once, at `.claude/skills/`, and are runnable from either Claude
+Code or Codex CLI — `.agents/skills` is a symlink to the same directory, which
+is where Codex looks. There's nothing Claude-specific in the instructions
+themselves; only the discovery path differs between the two tools.
 
 ## Prerequisites
 
@@ -174,16 +180,15 @@ curation, reply drafting.
 - An X developer account with pay-per-use billing and credits loaded
 - X Premium, if you intend to publish long-form Articles
 - A Notion workspace, with an internal integration you can create
-- Claude Code, for the skill-based steps
+- Claude Code or Codex CLI, for the skill-based steps
 - An OpenAI API key, if you intend to use the paper-outreach pipeline
 - A Google Cloud OAuth client with the Gmail API enabled, if you intend to send outreach email
-- Claude Code plus the `research` extra (`pip install -e ".[research]"`), only for the optional author-research step
+- The `research` extra (`uv sync --extra research`), only for the optional author-research step — it calls the Claude Agent SDK directly, so it works the same regardless of which CLI is orchestrating
 
 ## Installation
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -e .
+uv sync
 cp .env.example .env
 ```
 
@@ -490,7 +495,7 @@ Rows without a confirmed email or handle are left `Needs Handles` for you to
 fill in by hand — or to research automatically:
 
 ```bash
-.venv/bin/pip install -e ".[research]"                       # one-time, installs claude-agent-sdk
+uv sync --extra research                                      # one-time, installs claude-agent-sdk
 .venv/bin/python gtm_agent/research_authors.py                 # run 1.5: web-research Needs Handles rows
 .venv/bin/python gtm_agent/research_authors.py --dry-run       # research and print, write nothing
 ```
@@ -645,6 +650,40 @@ Two constraints apply:
   evidence, since a newly seeded corpus would otherwise appear to be a corpus of
   failures.
 
+## Founder memory
+
+`memory/` (gitignored) is a small set of markdown files that summarize what
+the drafting skills have actually observed about the founder — voice,
+topics/accounts/companies worth engaging, and cross-cutting likes/dislikes —
+generated from real activity rather than hand-written once and left stale:
+
+- `MEMORY.md`: index, with a confidence level per file
+- `x-voice.md` / `x-topics.md`: tone and topic signal for the engagement
+  and publishing pipelines, from `voice_corpus.json` and the Response
+  Calendar/Tweet Drafts `Posted`/`Rejected` history
+- `outreach-voice.md` / `outreach-topics.md`: the same for paper outreach,
+  from the Paper Authors and Paper Outreach databases
+- `preferences.md`: standing likes/dislikes already codified in
+  `draft-x-replies/style.md` and `SKILL.md`, collected in one place
+
+Each file states its own confidence and says outright when history is too
+thin to support a claim, rather than inventing a pattern. `draft-x-replies`,
+`polish-x-drafts`, and `paper-outreach` all read the relevant file(s)
+alongside their existing corpus/config sources. A founder can add durable
+notes directly under each file's `## Founder notes` section — that section
+is preserved whenever the automatic update below regenerates the rest.
+
+Updates happen automatically, no explicit request needed, in two ways:
+every skill that touches Notion or `voice_corpus.json`
+(`draft-x-replies`, `publish-x-replies`, `publish-x-queue`, `paper-outreach`,
+`publish-paper-outreach`, `polish-x-drafts`) runs the shared procedure in
+`.claude/memory-update-procedure.md` as its own last step, on every run —
+a fast no-op when nothing new happened, an update to just the affected
+file(s) when it did; and — per `CLAUDE.md` (symlinked as `AGENTS.md`, so this
+applies whether the session is Claude Code or Codex) — any opinion the
+founder states directly gets appended to the relevant file's `## Founder
+notes` in that same turn.
+
 ## Project layout
 
 **User-editable configuration**
@@ -655,6 +694,7 @@ Two constraints apply:
 **Generated files (all gitignored)**
 
 - `voice_corpus.json`: style exemplars
+- `memory/`: observed founder voice/topics/preferences (see "Founder memory" above)
 - `gtm_agent.db`: seen-set and user ID cache
 - `x_oauth_token.json`: publishing token
 - `gmail_oauth_token.json`: outreach email token

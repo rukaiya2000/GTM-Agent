@@ -23,6 +23,12 @@ Authors** (one row per author, related to a paper). `NOTION_PAPER_OUTREACH_DB_ID
 and `NOTION_PAPER_AUTHORS_DB_ID` must be set in `.env` — if either is missing,
 surface that directly rather than guessing an ID.
 
+Before drafting, check `memory/outreach-voice.md` and
+`memory/outreach-topics.md` (repo root) — observed tone and topic signal
+from real staged papers and sent/replied messages, with a stated confidence
+level. Both currently have very little to draw on; when they say so, draft
+from the script defaults and `memory/x-voice.md` instead of guessing a tone.
+
 ## Default flow: run everything in one pass
 
 When the user asks to run paper outreach on a newly staged paper (or just
@@ -71,10 +77,11 @@ Blurb. Needs `OPENAI_API_KEY`.
 
 Part of the default flow, not an optional extra — run it right after Step 1
 so as many authors as possible have a contact for Step 3 to draft against.
-Spawns one Haiku subagent per `Needs Handles` author to search the open web;
+Spawns one lightweight subagent per `Needs Handles` author to search the open web
+(or, if subagents aren't available, research each one sequentially yourself);
 findings move rows to `Needs Review` (never straight to `Draft Ready` — a web
 match is a candidate, not a confirmation) with cited evidence. Needs
-`pip install -e ".[research]"`. Report what was found per author and flag
+`uv sync --extra research`. Report what was found per author and flag
 anyone still `Needs Handles` after the pass — those get skipped in Step 3
 since there's no contact to draft against.
 
@@ -101,6 +108,14 @@ When Step 3 is done, tell the user the drafts are ready for review in Notion
 `publish-paper-outreach` is the separate skill to run when they're ready to
 actually send. Don't run it yourself as part of this flow, and don't set
 `Send Via` on their behalf.
+
+## Update memory (automatic, every run)
+
+After reporting, run the procedure in `.claude/memory-update-procedure.md`
+against any newly staged paper's blurb — `memory/outreach-topics.md` is the
+file it can touch (this skill never sends, so `outreach-voice.md` won't
+change here). No user request needed, and it's a silent no-op when nothing
+new was staged.
 
 ## Notes
 
