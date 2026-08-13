@@ -39,6 +39,26 @@ TWEET_DRAFTS_SCHEMA = {
     "Date": {"created_time": {}},
 }
 
+# The canonical Company Research schema (deep-search skill). Same
+# single-source-of-truth rule as TWEET_DRAFTS_SCHEMA above.
+COMPANY_RESEARCH_SCHEMA = {
+    "Name": {"title": {}},
+    "Description": {"rich_text": {}},
+    "URL": {"url": {}},
+    "Query": {"rich_text": {}},
+    "Source": {
+        "multi_select": {
+            "options": [
+                {"name": "news", "color": "blue"},
+                {"name": "funding", "color": "green"},
+                {"name": "directory", "color": "yellow"},
+            ]
+        }
+    },
+    "Signal Date": {"date": {}},
+    "Date": {"created_time": {}},
+}
+
 
 class NotionApiError(RuntimeError):
     def __init__(self, status_code: int, message: str):
@@ -279,11 +299,45 @@ class NotionClient:
         if not response.ok:
             raise NotionApiError(response.status_code, response.text)
 
+    # --- Company Research (deep-search skill) ---
+
+    def create_company_research_row(
+        self,
+        database_id: str,
+        name: str,
+        description: str,
+        url: str,
+        query: str,
+        source: str,
+        signal_date: str | None = None,
+    ) -> None:
+        properties: dict = {
+            "Name": {"title": [{"text": {"content": name[:200]}}]},
+            "Description": {"rich_text": [{"text": {"content": description[:2000]}}]},
+            "URL": {"url": url},
+            "Query": {"rich_text": [{"text": {"content": query[:2000]}}]},
+            "Source": {"multi_select": [{"name": source}]},
+        }
+        if signal_date:
+            properties["Signal Date"] = {"date": {"start": signal_date}}
+
+        response = requests.post(
+            f"{BASE_URL}/pages",
+            headers=self._headers(),
+            json={"parent": {"database_id": database_id}, "properties": properties},
+        )
+        if not response.ok:
+            raise NotionApiError(response.status_code, response.text)
+
     def create_database(
-        self, parent_page_id: str, title: str = "Tweet Drafts"
+        self,
+        parent_page_id: str,
+        title: str = "Tweet Drafts",
+        schema: dict | None = None,
     ) -> str:
-        """Create the Tweet Drafts database under an existing page. Returns the
-        new database id. The integration must be shared with the parent page."""
+        """Create a database under an existing page (defaults to the Tweet
+        Drafts schema). Returns the new database id. The integration must be
+        shared with the parent page."""
         response = requests.post(
             f"{BASE_URL}/databases",
             headers=self._headers(),
@@ -291,7 +345,7 @@ class NotionClient:
                 "parent": {"type": "page_id", "page_id": parent_page_id},
                 "title": [{"type": "text", "text": {"content": title}}],
                 "is_inline": True,
-                "properties": TWEET_DRAFTS_SCHEMA,
+                "properties": schema or TWEET_DRAFTS_SCHEMA,
             },
         )
         if not response.ok:
