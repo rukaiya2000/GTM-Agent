@@ -20,9 +20,9 @@ already filled in are never overwritten.
     python gtm_agent/research_authors.py --dry-run          # research and print, write nothing
     python gtm_agent/research_authors.py --paper attention  # only papers whose name matches
 
-Needs the research extra (pip install -e ".[research]") and a working Claude
-Code install. Unlike the rest of this project it spends Anthropic API
-tokens — roughly one Haiku subagent per author — and can take a few minutes.
+Needs the research extra (uv sync --extra research) and an Anthropic API key.
+Unlike the rest of this project it spends Anthropic API tokens — roughly one
+Haiku subagent per author — and can take a few minutes.
 """
 
 import argparse
@@ -217,7 +217,7 @@ def main() -> int:
 
     if _SDK_IMPORT_ERROR is not None:
         print("claude-agent-sdk is not installed. This optional step needs the research extra:")
-        print('  .venv/bin/pip install -e ".[research]"')
+        print("  uv sync --extra research")
         return 1
 
     try:
