@@ -29,7 +29,7 @@ your account*: posting, DMs, reading DM replies, private metrics.
    - **Type of App**: *Web App, Automated App or Bot* (the confidential
      client type — this is what gives you a client *secret*).
    - **Callback URI / Redirect URL**: `http://127.0.0.1:8765/callback` —
-     must match exactly; `scripts/x_oauth_login.py` listens there.
+     must match exactly; `gtm_agent/x_oauth_login.py` listens there.
    - **Website URL**: anything valid (your X profile URL works).
 5. On save, the portal shows the **OAuth 2.0 Client ID and Client Secret**
    once → `X_CLIENT_ID`, `X_CLIENT_SECRET`. If the secret is lost,
@@ -37,7 +37,7 @@ your account*: posting, DMs, reading DM replies, private metrics.
 6. Authorize once:
 
    ```bash
-   .venv/bin/python scripts/x_oauth_login.py
+   .venv/bin/python gtm_agent/x_oauth_login.py
    ```
 
    The browser consent screen opens; on approval the script captures the
@@ -70,14 +70,14 @@ are `gmail.send` + `gmail.readonly` only.
    test-user list and none is needed.)
 5. **Clients** page → **Create client** → Application type: **Desktop app**
    (required — it permits the loopback redirect on `127.0.0.1:8766` that
-   `scripts/gmail_oauth_login.py` uses, with no pre-registered redirect
+   `gtm_agent/gmail_oauth_login.py` uses, with no pre-registered redirect
    URI) → **Create**. Copy the **Client ID** and **Client Secret** →
    `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`. Unlike X, these stay viewable
    later under **Clients**.
 6. Authorize once:
 
    ```bash
-   .venv/bin/python scripts/gmail_oauth_login.py
+   .venv/bin/python gtm_agent/gmail_oauth_login.py
    ```
 
    Expect a "Google hasn't verified this app" warning — normal for your own

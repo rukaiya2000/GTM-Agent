@@ -221,9 +221,9 @@ walks through both, click by click.
 Run once, in this order:
 
 ```bash
-.venv/bin/python scripts/smoke_test.py <username>                    # 1. verify auth
-.venv/bin/python scripts/setup.py <notion-page-url> <your-username>  # 2. bootstrap
-.venv/bin/python scripts/x_oauth_login.py                            # 3. authorize posting
+.venv/bin/python gtm_agent/smoke_test.py <username>                    # 1. verify auth
+.venv/bin/python gtm_agent/setup.py <notion-page-url> <your-username>  # 2. bootstrap
+.venv/bin/python gtm_agent/x_oauth_login.py                            # 3. authorize posting
 ```
 
 `setup.py` creates the `Tweet Drafts` database under the given Notion page with
@@ -253,8 +253,8 @@ You can populate the Accounts section manually, or have the system propose
 candidates:
 
 ```bash
-.venv/bin/python scripts/discover_accounts.py             # stage candidates
-.venv/bin/python scripts/discover_accounts.py --promote   # Approved to interests.md
+.venv/bin/python gtm_agent/discover_accounts.py             # stage candidates
+.venv/bin/python gtm_agent/discover_accounts.py --promote   # Approved to interests.md
 ```
 
 The first form searches your topics, collects post authors, filters out accounts
@@ -267,9 +267,9 @@ approved it.
 ### Discovering posts
 
 ```bash
-.venv/bin/python scripts/discover.py              # stage into Response Calendar
-.venv/bin/python scripts/discover.py --dry-run    # preview without writing
-.venv/bin/python scripts/harvest_and_rank.py      # legacy: prints only, accounts only
+.venv/bin/python gtm_agent/discover.py              # stage into Response Calendar
+.venv/bin/python gtm_agent/discover.py --dry-run    # preview without writing
+.venv/bin/python gtm_agent/harvest_and_rank.py      # legacy: prints only, accounts only
 ```
 
 Fetches from configured accounts and topics, drops thread continuations
@@ -283,7 +283,7 @@ read-only; the script never likes, replies, or posts.
 ### Monitoring mentions
 
 ```bash
-.venv/bin/python scripts/check_mentions.py <your-username>
+.venv/bin/python gtm_agent/check_mentions.py <your-username>
 ```
 
 Replies to your posts, @-mentions, and quotes are otherwise invisible to the
@@ -340,7 +340,7 @@ never posts: it writes the three `Reply` fields and recommends one, sets
 `Posted` — that records what actually went out.
 
 Posting the staged queue is a separate, explicitly-invoked step —
-`publish-x-replies` / `scripts/post_response_calendar.py` — not something
+`publish-x-replies` / `gtm_agent/post_response_calendar.py` — not something
 that runs unattended off drafting. It posts rows whose `Scheduled Time` has
 passed: the selected reply, or a plain/quote retweet depending on `Selected`.
 There is deliberately no `Like` action — auto-like is the specific pattern
@@ -350,7 +350,7 @@ entirely rather than wired up.
 
 On success the script appends the posted text to `voice_corpus.json` itself
 (`post_type: "reply"` or `"quote"`), so replies/quotes posted this way don't
-need a separate corpus-sync step. `scripts/sync_replies.py` still exists as a
+need a separate corpus-sync step. `gtm_agent/sync_replies.py` still exists as a
 backfill for anything posted outside this flow — e.g. by hand, directly on
 X — keyed by Notion page ID so it's safe to re-run on rows already marked
 `Posted` manually. Plain retweets carry no text either way, so nothing is
@@ -401,8 +401,8 @@ In Notion, choose one of the following:
 ### Publishing
 
 ```bash
-.venv/bin/python scripts/post_ready.py      # one due row per run
-.venv/bin/python scripts/post_all_due.py    # all due rows, oldest first
+.venv/bin/python gtm_agent/post_ready.py      # one due row per run
+.venv/bin/python gtm_agent/post_all_due.py    # all due rows, oldest first
 ```
 
 Alternatively, ask Claude to post your ready tweets; the `publish-x-queue` skill
@@ -476,8 +476,8 @@ Add a paper to the Paper Outreach database with a `Paper Name` and,
 ideally, a `Paper link` (arXiv, DOI, or title also works), then:
 
 ```bash
-.venv/bin/python scripts/fetch_paper_authors.py               # run 1: resolve authors, fetch handles, draft the blurb
-.venv/bin/python scripts/fetch_paper_authors.py --all-authors  # fetch every author instead of just the top 5
+.venv/bin/python gtm_agent/fetch_paper_authors.py               # run 1: resolve authors, fetch handles, draft the blurb
+.venv/bin/python gtm_agent/fetch_paper_authors.py --all-authors  # fetch every author instead of just the top 5
 ```
 
 This resolves the paper via OpenAlex (falling back to Semantic Scholar),
@@ -491,8 +491,8 @@ fill in by hand — or to research automatically:
 
 ```bash
 .venv/bin/pip install -e ".[research]"                       # one-time, installs claude-agent-sdk
-.venv/bin/python scripts/research_authors.py                 # run 1.5: web-research Needs Handles rows
-.venv/bin/python scripts/research_authors.py --dry-run       # research and print, write nothing
+.venv/bin/python gtm_agent/research_authors.py                 # run 1.5: web-research Needs Handles rows
+.venv/bin/python gtm_agent/research_authors.py --dry-run       # research and print, write nothing
 ```
 
 This optional step fans out one Claude Agent SDK subagent per `Needs
@@ -512,7 +512,7 @@ Then draft messages for everyone with a contact on file — this never touches
 `Send Via` at all, so nothing needs to be set in Notion first:
 
 ```bash
-.venv/bin/python scripts/send_outreach.py --draft-only         # run 2: draft only, never sends
+.venv/bin/python gtm_agent/send_outreach.py --draft-only         # run 2: draft only, never sends
 ```
 
 This drafts a `Subject` + `Message` for every author who doesn't have one
@@ -530,7 +530,7 @@ Review the drafts in Notion, edit anything you want, and set `Send Via`
 that choice alone is what authorizes a send, nothing else is checked. Then:
 
 ```bash
-.venv/bin/python scripts/send_outreach.py                     # run 3: draft (if needed) and send
+.venv/bin/python gtm_agent/send_outreach.py                     # run 3: draft (if needed) and send
 ```
 
 This sends to every author with a `Send Via` set — anyone still blank is
@@ -559,8 +559,8 @@ there isn't one, reply in the same thread.
 ### Following up
 
 ```bash
-.venv/bin/python scripts/send_followups.py             # run 3: check replies, send due follow-ups
-.venv/bin/python scripts/send_followups.py --dry-run   # preview without sending or updating Notion
+.venv/bin/python gtm_agent/send_followups.py             # run 3: check replies, send due follow-ups
+.venv/bin/python gtm_agent/send_followups.py --dry-run   # preview without sending or updating Notion
 ```
 
 Run this regularly (by hand, or on a schedule you set up yourself — there is
@@ -627,7 +627,7 @@ does not feed the voice corpus.
 ### Performance feedback
 
 ```bash
-.venv/bin/python scripts/fetch_metrics.py
+.venv/bin/python gtm_agent/fetch_metrics.py
 ```
 
 Retrieves impressions, profile clicks, and engagement counts for your own posts,
@@ -659,7 +659,7 @@ Two constraints apply:
 - `x_oauth_token.json`: publishing token
 - `gmail_oauth_token.json`: outreach email token
 
-**Library** (`src/gtm_agent/`)
+**Library and scripts** (`gtm_agent/`) — one flat package; library modules are imported by the scripts below and by each other.
 
 | Module | Responsibility |
 |---|---|
@@ -679,8 +679,6 @@ Two constraints apply:
 | `paper_pdf.py` | Corresponding-author emails parsed from a paper's own arXiv PDF |
 | `handle_search.py` | Best-effort X handle discovery for paper authors |
 | `outreach_llm.py` | OpenAI-backed blurb and outreach message drafting |
-
-**Scripts** (`scripts/`)
 
 | Script | Purpose |
 |---|---|

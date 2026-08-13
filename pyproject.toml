@@ -10,7 +10,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Only for scripts/research_authors.py (paper-outreach run 1.5); the rest of
+# Only for gtm_agent/research_authors.py (paper-outreach run 1.5); the rest of
 # the pipeline never needs it.
 research = ["claude-agent-sdk>=0.1.0"]
 
@@ -19,4 +19,4 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+include = ["gtm_agent*"]

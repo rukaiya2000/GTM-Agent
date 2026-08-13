@@ -6,8 +6,8 @@ description: Send real paper-outreach messages (Gmail/X DM) to every author with
 # Publish Paper Outreach
 
 Sends real outreach messages on the account's behalf — the actual
-send/reply-check logic stays in tested scripts (`scripts/send_outreach.py`,
-`scripts/send_followups.py`), not LLM-driven reasoning. This skill is the
+send/reply-check logic stays in tested scripts (`gtm_agent/send_outreach.py`,
+`gtm_agent/send_followups.py`), not LLM-driven reasoning. This skill is the
 trigger: run the script, report back what it did.
 
 This is deliberately separate from `paper-outreach`, which only fetches
@@ -24,7 +24,7 @@ ID.
 ## Sending
 
 ```bash
-.venv/bin/python scripts/send_outreach.py
+.venv/bin/python gtm_agent/send_outreach.py
 ```
 
 **This step sends real messages** (Gmail/X DM) to every author with a
@@ -52,7 +52,7 @@ copy-paste.
 ## Checking replies / sending follow-ups
 
 ```bash
-.venv/bin/python scripts/send_followups.py              # add --dry-run to preview
+.venv/bin/python gtm_agent/send_followups.py              # add --dry-run to preview
 ```
 
 Safe to run repeatedly — checks Email/X threads for a reply first (stops

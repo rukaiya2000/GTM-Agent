@@ -6,7 +6,7 @@ description: Post every "Ready to post" row in the Response Calendar Notion data
 # Publish X Replies
 
 Posts real replies and retweets to X on the account's behalf — the actual
-posting logic stays in tested code (`scripts/post_response_calendar.py`),
+posting logic stays in tested code (`gtm_agent/post_response_calendar.py`),
 not LLM-driven reasoning. This skill is the trigger: run the script, report
 back what it did.
 
@@ -22,7 +22,7 @@ at the already-decided time, nothing more.
 1. Run, from the project root:
 
    ```bash
-   .venv/bin/python scripts/post_response_calendar.py
+   .venv/bin/python gtm_agent/post_response_calendar.py
    ```
 
 2. Report the script's output back to the user plainly — how many rows were
@@ -57,7 +57,7 @@ partially-posted thread or an orphaned draft behind.
 
 - If the script exits with a config error (missing `NOTION_API_TOKEN`,
   `X_CLIENT_ID`, etc.), or says the X OAuth token needs
-  `scripts/x_oauth_login.py` re-run, surface that directly — don't try to
+  `gtm_agent/x_oauth_login.py` re-run, surface that directly — don't try to
   work around it.
 - **No `Like` action exists on purpose.** The project's own PRD
   (`Req/x-req.md`) flags auto-like as the specific pattern that gets X

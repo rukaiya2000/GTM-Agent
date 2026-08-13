@@ -25,7 +25,7 @@ by format so short-form and long-form voice don't bleed into each other:
 - Every entry is something the author actually wrote and posted.
 
 This file is **read-only for this skill.** It is appended to only at real post time by
-`scripts/post_ready.py` / `post_all_due.py`. Never write to it here, even if the user
+`gtm_agent/post_ready.py` / `post_all_due.py`. Never write to it here, even if the user
 mentions posting.
 
 **Match reference to the post type being drafted:**
@@ -36,7 +36,7 @@ mentions posting.
 exemplars. If the corpus grows large, prefer the closest matches over volume.
 
 **Prefer what actually worked.** Entries may carry a `metrics` object with an
-`engagement_rate` (populated by `scripts/fetch_metrics.py`). When present, weight
+`engagement_rate` (populated by `gtm_agent/fetch_metrics.py`). When present, weight
 high-rate posts more heavily — they're evidence of what lands, not just what the
 author sounds like. Entries with no `metrics` are unmeasured, **not** bad: never
 treat a missing metric as a negative signal, and don't exclude them, especially

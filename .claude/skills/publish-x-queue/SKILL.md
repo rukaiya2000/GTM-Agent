@@ -6,7 +6,7 @@ description: Post every "Ready to post" row in the Tweet Drafts Notion database 
 # Publish X Queue
 
 Posts real tweets to X and costs real money per post — the actual posting logic
-stays in tested code (`scripts/post_all_due.py`), not LLM-driven reasoning. This
+stays in tested code (`gtm_agent/post_all_due.py`), not LLM-driven reasoning. This
 skill is the trigger: run the script, report back what it did.
 
 ## Steps
@@ -14,7 +14,7 @@ skill is the trigger: run the script, report back what it did.
 1. Run, from the project root:
 
    ```bash
-   .venv/bin/python scripts/post_all_due.py
+   .venv/bin/python gtm_agent/post_all_due.py
    ```
 
 2. Report the script's output back to the user plainly — how many rows were due,
@@ -49,7 +49,7 @@ If either happens, surface it plainly with the IDs — it needs manual cleanup.
 ## Notes
 
 - If the script exits with a config error (missing `NOTION_API_TOKEN`, `X_CLIENT_ID`,
-  etc.), or says the X OAuth token needs `scripts/x_oauth_login.py` re-run, surface
+  etc.), or says the X OAuth token needs `gtm_agent/x_oauth_login.py` re-run, surface
   that directly — don't try to work around it.
 - Invoking this skill is itself the user's authorization to post whatever is due —
   don't ask for confirmation per tweet. If they didn't mean to trigger it, that's

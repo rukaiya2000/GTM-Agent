@@ -14,7 +14,7 @@ AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 REDIRECT_URI = "http://127.0.0.1:8766/callback"
 # send: outreach email. readonly: checking a thread for a reply before
-# sending a follow-up (scripts/send_followups.py) — never used to read
+# sending a follow-up (gtm_agent/send_followups.py) — never used to read
 # unrelated mail, only threads this app itself started.
 SCOPES = "https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly"
 TOKEN_PATH = Path("gmail_oauth_token.json")
@@ -99,13 +99,13 @@ def load_token(path: Path = TOKEN_PATH) -> dict | None:
 def get_valid_access_token(client_id: str, client_secret: str, path: Path = TOKEN_PATH) -> str:
     token = load_token(path)
     if not token:
-        raise ConfigError("No Gmail OAuth token found. Run scripts/gmail_oauth_login.py first.")
+        raise ConfigError("No Gmail OAuth token found. Run gtm_agent/gmail_oauth_login.py first.")
 
     if time.time() < token["expires_at"] - EXPIRY_BUFFER_SECONDS:
         return token["access_token"]
 
     if not token.get("refresh_token"):
-        raise ConfigError("Gmail OAuth token expired and no refresh_token is available. Run scripts/gmail_oauth_login.py again.")
+        raise ConfigError("Gmail OAuth token expired and no refresh_token is available. Run gtm_agent/gmail_oauth_login.py again.")
 
     refreshed = refresh_access_token(token["refresh_token"], client_id, client_secret)
     save_token(refreshed, path)

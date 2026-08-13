@@ -161,7 +161,7 @@ def is_long_post(tweet: dict) -> bool:
 
 def _post(path: str, access_token: str, body: dict | None = None) -> dict:
     """POST to the X API with a user-context OAuth 2.0 access token. The app-only
-    bearer token used for reads will not work here. See scripts/x_oauth_login.py."""
+    bearer token used for reads will not work here. See gtm_agent/x_oauth_login.py."""
     response = requests.post(
         f"{BASE_URL}{path}",
         headers={"Authorization": f"Bearer {access_token}"},

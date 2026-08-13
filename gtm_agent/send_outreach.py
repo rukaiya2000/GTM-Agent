@@ -31,8 +31,8 @@ a successful send also records First Sent/Last Sent and (for Email) the
 Gmail thread id, which is what send_followups.py uses afterwards to check
 for a reply and, if there isn't one, send up to two follow-ups.
 
-    python scripts/send_outreach.py --draft-only    # draft only, never sends
-    python scripts/send_outreach.py                 # sends to anyone with a Send Via set
+    python gtm_agent/send_outreach.py --draft-only    # draft only, never sends
+    python gtm_agent/send_outreach.py                 # sends to anyone with a Send Via set
 """
 
 import argparse
@@ -232,11 +232,11 @@ def main() -> int:
     if not args.draft_only:
         x_access_token = get_x_access_token()
         if not x_access_token:
-            print("(X not connected — run scripts/x_oauth_login.py to enable real DM sending)\n")
+            print("(X not connected — run gtm_agent/x_oauth_login.py to enable real DM sending)\n")
 
         gmail_access_token = get_gmail_access_token()
         if not gmail_access_token:
-            print("(Gmail not connected — run scripts/gmail_oauth_login.py to enable real email sending)\n")
+            print("(Gmail not connected — run gtm_agent/gmail_oauth_login.py to enable real email sending)\n")
 
     for paper_row in papers:
         print(f"\n{paper_row['name']}")

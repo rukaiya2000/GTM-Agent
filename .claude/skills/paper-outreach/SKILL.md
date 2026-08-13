@@ -7,8 +7,8 @@ description: Fetch a staged paper's authors, web-research missing contact handle
 
 A separate, Notion-only pipeline for reaching out to research paper authors —
 distinct from the X pipelines, no shared voice corpus or review-gate
-machinery. All logic lives in tested scripts (`scripts/fetch_paper_authors.py`,
-`scripts/research_authors.py`, `scripts/send_outreach.py`); this skill is the
+machinery. All logic lives in tested scripts (`gtm_agent/fetch_paper_authors.py`,
+`gtm_agent/research_authors.py`, `gtm_agent/send_outreach.py`); this skill is the
 trigger, not the reasoning. See `Req/paper-outreach.md` for the original
 feature idea and the README's "Pipeline 3: Paper outreach" section for full
 setup docs.
@@ -37,7 +37,7 @@ ever runs.
 ## Step 1 — Resolve authors + draft blurb
 
 ```bash
-yes "" | .venv/bin/python scripts/fetch_paper_authors.py
+yes "" | .venv/bin/python gtm_agent/fetch_paper_authors.py
 ```
 
 The script prompts interactively per paper ("Also fetch anyone by name?") —
@@ -47,7 +47,7 @@ run. If the user names specific extra co-authors to include, fetch everyone
 instead and pick the ones they named out of the report:
 
 ```bash
-.venv/bin/python scripts/fetch_paper_authors.py --all-authors
+.venv/bin/python gtm_agent/fetch_paper_authors.py --all-authors
 ```
 
 Requires a paper already staged in the **Paper Outreach** database (a `Paper
@@ -66,7 +66,7 @@ Blurb. Needs `OPENAI_API_KEY`.
 ## Step 2 — Web-research missing handles
 
 ```bash
-.venv/bin/python scripts/research_authors.py            # add --dry-run to preview
+.venv/bin/python gtm_agent/research_authors.py            # add --dry-run to preview
 ```
 
 Part of the default flow, not an optional extra — run it right after Step 1
@@ -81,7 +81,7 @@ since there's no contact to draft against.
 ## Step 3 — Draft messages (never sends)
 
 ```bash
-.venv/bin/python scripts/send_outreach.py --draft-only
+.venv/bin/python gtm_agent/send_outreach.py --draft-only
 ```
 
 Drafts a `Subject` + `Message` for every author who doesn't have one yet and

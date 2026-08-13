@@ -49,7 +49,7 @@ API to post.
 ## Phase 1 — Fetch new candidates
 
 ```bash
-.venv/bin/python scripts/discover.py            # add --dry-run to preview
+.venv/bin/python gtm_agent/discover.py            # add --dry-run to preview
 ```
 
 Reads `interests.md` for accounts and topics, ranks by engagement, skips

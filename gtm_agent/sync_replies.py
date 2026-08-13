@@ -8,7 +8,7 @@ Reads rows with `Status = Posted` where `Selected` names something with text:
 a reply field (learned as post_type "reply") or a quote-retweet's
 `Retweet Message` (learned as post_type "quote"). Plain retweets (empty
 `Retweet Message`) are skipped — there's no text to learn from. This is a
-backfill for anything posted outside `scripts/post_response_calendar.py`
+backfill for anything posted outside `gtm_agent/post_response_calendar.py`
 (which already writes to the corpus at post time) — e.g. rows posted by hand.
 """
 

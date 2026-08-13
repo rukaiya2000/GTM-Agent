@@ -146,7 +146,7 @@ def main() -> int:
         print(f"X request failed: {e}")
         print(f"\nThe database was created ({db_id}) — re-run with --force-new-db "
               "only if you want a second one; otherwise seed the corpus later with "
-              "scripts/fetch_voice_corpus.py.")
+              "gtm_agent/fetch_voice_corpus.py.")
         return 1
 
     added_short = sum(
@@ -180,7 +180,7 @@ def main() -> int:
             "matching will be thin until you publish some through this pipeline."
         )
 
-    print("\nSetup complete. Next: scripts/x_oauth_login.py to authorize posting.")
+    print("\nSetup complete. Next: gtm_agent/x_oauth_login.py to authorize posting.")
     return 0
 
 

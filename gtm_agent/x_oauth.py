@@ -14,7 +14,7 @@ AUTHORIZE_URL = "https://x.com/i/oauth2/authorize"
 TOKEN_URL = "https://api.x.com/2/oauth2/token"
 REDIRECT_URI = "http://127.0.0.1:8765/callback"
 # dm.read: checking a DM conversation for a reply before sending a follow-up
-# (scripts/send_followups.py).
+# (gtm_agent/send_followups.py).
 SCOPES = "tweet.read tweet.write dm.write dm.read users.read offline.access"
 TOKEN_PATH = Path("x_oauth_token.json")
 
@@ -96,7 +96,7 @@ def get_valid_access_token(
     token = load_token(path)
     if not token:
         raise ConfigError(
-            "No X OAuth token found. Run scripts/x_oauth_login.py first."
+            "No X OAuth token found. Run gtm_agent/x_oauth_login.py first."
         )
 
     if time.time() < token["expires_at"] - EXPIRY_BUFFER_SECONDS:
@@ -105,7 +105,7 @@ def get_valid_access_token(
     if not token.get("refresh_token"):
         raise ConfigError(
             "X OAuth token expired and no refresh_token is available. "
-            "Run scripts/x_oauth_login.py again."
+            "Run gtm_agent/x_oauth_login.py again."
         )
 
     refreshed = refresh_access_token(token["refresh_token"], client_id, client_secret)

@@ -27,8 +27,8 @@ x_oauth_login.py if your saved token predates it). LinkedIn has neither a
 send nor a read API, so those rows are left alone; check replies there
 yourself.
 
-    python scripts/send_followups.py
-    python scripts/send_followups.py --dry-run    # preview without sending or updating Notion
+    python gtm_agent/send_followups.py
+    python gtm_agent/send_followups.py --dry-run    # preview without sending or updating Notion
 """
 
 import argparse
@@ -198,7 +198,7 @@ def main() -> int:
 
     gmail_token = get_gmail_access_token()
     if not gmail_token:
-        print("(Gmail not connected — run scripts/gmail_oauth_login.py to check/send email follow-ups)\n")
+        print("(Gmail not connected — run gtm_agent/gmail_oauth_login.py to check/send email follow-ups)\n")
     gmail_own_email = None
     if gmail_token:
         try:
@@ -208,7 +208,7 @@ def main() -> int:
 
     x_token = get_x_access_token()
     if not x_token:
-        print("(X not connected — run scripts/x_oauth_login.py to check/send X follow-ups)\n")
+        print("(X not connected — run gtm_agent/x_oauth_login.py to check/send X follow-ups)\n")
     x_client = XClient() if any(a["send_via"] == "X" for a in candidates) else None
     own_x_id = None
     if x_token and x_client:

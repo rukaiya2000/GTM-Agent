@@ -1,6 +1,6 @@
 # Discovery Interests
 
-What `scripts/discover.py` searches. Edit freely — it's parsed by section heading,
+What `gtm_agent/discover.py` searches. Edit freely — it's parsed by section heading,
 so keep the `## Accounts` and `## Topics` headings, and keep entries as `-` bullets.
 Blank sections are fine. Lines that aren't bullets are ignored, so add notes anywhere.
 

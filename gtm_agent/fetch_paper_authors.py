@@ -6,8 +6,8 @@ OpenAlex flagged any), then the rest in listed order, since author order
 itself is a signal of contribution. Pass extra names to also fetch specific
 co-authors beyond that on request.
 
-    python scripts/fetch_paper_authors.py                  # process all New papers
-    python scripts/fetch_paper_authors.py --all-authors     # fetch every author, not just the top 5
+    python gtm_agent/fetch_paper_authors.py                  # process all New papers
+    python gtm_agent/fetch_paper_authors.py --all-authors     # fetch every author, not just the top 5
 
 Handles (X/LinkedIn/email) are filled in only when a source actually states
 them. Email comes from the corresponding-author footnote printed in the
@@ -15,7 +15,7 @@ arXiv PDF itself, when there is one — the strongest signal available, and
 also what decides who counts as "Corresponding" over the first-author
 fallback. OpenAlex/S2 rarely carry socials, so most rows will come back with
 just name + affiliation and a "Needs Handles" status for you to fill in by
-hand in Notion — or to let scripts/research_authors.py (run 1.5) take a
+hand in Notion — or to let gtm_agent/research_authors.py (run 1.5) take a
 web-research pass at first.
 
 Also generates the paper's Blurb (from the abstract + your Notes, drawing on

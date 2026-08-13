@@ -16,9 +16,9 @@ confirmation. The cited evidence is printed to the console for the human
 glance. Rows where nothing was found stay "Needs Handles". Fields a human
 already filled in are never overwritten.
 
-    python scripts/research_authors.py                    # research all Needs Handles rows
-    python scripts/research_authors.py --dry-run          # research and print, write nothing
-    python scripts/research_authors.py --paper attention  # only papers whose name matches
+    python gtm_agent/research_authors.py                    # research all Needs Handles rows
+    python gtm_agent/research_authors.py --dry-run          # research and print, write nothing
+    python gtm_agent/research_authors.py --paper attention  # only papers whose name matches
 
 Needs the research extra (pip install -e ".[research]") and a working Claude
 Code install. Unlike the rest of this project it spends Anthropic API
