@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="assets/logo.svg" alt="Wingman" width="440">
-</p>
+<h1 align="center">Wingman</h1>
 
 <p align="center">
   <strong>A go-to-market agent for X that finds the conversations worth joining and drafts what to say, while you decide what actually goes out.</strong>
@@ -25,7 +23,7 @@
 opens the conversation. You are still the one who shows up and speaks.*
 
 Currently X only. LinkedIn support is planned (see [Roadmap](#roadmap)). The
-original product requirements live in `x-req.md`; several of its API assumptions
+original product requirements live in `Req/x-req.md`; several of its API assumptions
 have since been overtaken by platform changes, which are noted inline below.
 
 ## Contents
@@ -344,7 +342,7 @@ Posting the staged queue is a separate, explicitly-invoked step —
 that runs unattended off drafting. It posts rows whose `Scheduled Time` has
 passed: the selected reply, or a plain/quote retweet depending on `Selected`.
 There is deliberately no `Like` action — auto-like is the specific pattern
-`x-req.md` §2.5 calls out as the cause of account suspensions, and a like has
+`Req/x-req.md` §2.5 calls out as the cause of account suspensions, and a like has
 no authored text to justify automating it, so it was cut from `Selected`
 entirely rather than wired up.
 
@@ -362,12 +360,12 @@ harvested for those.
 contributes to ranking at a deliberately small weight (0.01). Impression counts
 run orders of magnitude larger than like counts and would otherwise dominate the
 score, and for other users' posts the field frequently returns `0`. No behaviour
-depends on its presence. This supersedes `x-req.md` §2.1, which states that
+depends on its presence. This supersedes `Req/x-req.md` §2.1, which states that
 impressions are unavailable for other users' posts.
 
 **Topic search is implemented but unverified.** Recent-search covers only the
 past seven days, and whether it is callable on pay-per-use billing remains
-`x-req.md` open item 2. `discover.py` degrades per source: a failing topic is
+`Req/x-req.md` open item 2. `discover.py` degrades per source: a failing topic is
 reported individually and account-based discovery continues to work.
 
 ## Pipeline 2: Publishing
@@ -711,6 +709,8 @@ Two constraints apply:
 | `draft-x-replies` | Run discovery, prune using the `status` signal, then write three reply options in your voice for the shortlist |
 | `publish-x-queue` | Thin trigger for `post_all_due.py` |
 | `publish-x-replies` | Thin trigger for `post_response_calendar.py` |
+| `paper-outreach` | Fetch a staged paper's authors, research missing contact handles, and draft Email/X/LinkedIn messages — draft only, never sends |
+| `publish-paper-outreach` | Thin trigger for `send_outreach.py` / `send_followups.py`: sends drafted messages and checks for replies |
 
 ## Project status
 
@@ -740,7 +740,7 @@ Known limitations:
 
 | Limitation | Detail |
 |---|---|
-| Topic search unverified | Recent-search may not be callable on pay-per-use billing (`x-req.md` open item 2). Degrades gracefully. |
+| Topic search unverified | Recent-search may not be callable on pay-per-use billing (`Req/x-req.md` open item 2). Degrades gracefully. |
 | No automatic polling | `polish-x-drafts` must be invoked; it does not watch for `Ready for AI Review` rows. |
 | No scheduler | Publishing is manual, gated on `Scheduled Time`. |
 | Weak `sync_posted.py` deduplication | Matches on exact text rather than tweet ID, since the `Posted URL` property was removed. Avoids re-importing on every run. |
@@ -783,19 +783,20 @@ Ordered approximately by impact on day-to-day use.
 
 ### Platform expansion
 
-- **LinkedIn.** `linkedin-req.md` exists but is currently empty. The overall
-  structure should port cleanly (discovery, voice corpus, review gates), but
-  LinkedIn's API is considerably more restrictive regarding both reading and
-  posting, so feasibility needs verification before design. The corpus concept
-  should be reused while keeping voice separate: LinkedIn and X are legitimately
-  different registers.
+- **LinkedIn.** Product requirements are written (`Req/linkedin-req.md`); no
+  implementation exists yet. Because LinkedIn prohibits third-party automation
+  of the site itself, the design is deliberately narrower than the X pipeline:
+  a personal relationship CRM and voice-matched draft generator, with every
+  connection request and message still sent by hand. No scraping, browser
+  automation, or auto-fill of any kind. The voice corpus concept carries over,
+  kept separate from X's since the two platforms warrant different registers.
 - **Cross-platform adaptation.** Once a second platform exists, render a single
   idea appropriately for each rather than duplicating identical text.
 
 ### Deferred in the original requirements
 
 - **Context graph** of prior conversations, allowing replies to reference
-  history. `x-req.md` cut this deliberately. It becomes worthwhile only once reply
+  history. `Req/x-req.md` cut this deliberately. It becomes worthwhile only once reply
   volume exceeds what you can track yourself.
 - **Direct message handling for the engagement pipeline.** Cut by choice, and
   reasonably kept cut: direct messages carry higher stakes at lower volume
