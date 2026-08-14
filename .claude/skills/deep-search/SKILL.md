@@ -40,8 +40,10 @@ a single message so they run concurrently** — same pattern as
    useful signal for technical companies (activity, stars, what they've
    actually shipped).
 
-Give each subagent: the exact query, its one source angle, and this exact
-instruction to reply with **only** a JSON array, capped at ~8–10 companies:
+Give each subagent: the exact query, its one source angle, a hard cap of
+**10 tool calls** (stop searching and return its best findings once hit,
+even if under 8-10 companies), and this exact instruction to reply with
+**only** a JSON array, capped at ~8–10 companies:
 
 ```json
 [{"company": "...", "one_line": "...", "url": "...", "signal_date": "YYYY-MM or null", "source": "news|funding|directory"}]
@@ -96,3 +98,6 @@ pipeline here writes through the direct API for that reason.
   hiring/job-postings signals) unless asked; keep the run bounded, same
   lesson as `docs/token-usage-analysis.md`'s "never double-spawn."
 - Never spawn more than one subagent per source per query.
+- Each subagent is capped at 10 tool calls (see Step 2) to bound token
+  spend — a subagent that's still short of 8-10 companies at the cap
+  should return what it has rather than keep searching.
