@@ -1,6 +1,6 @@
 ---
 name: deep-search
-description: Deep-research a single market/company question (e.g. "ITSM companies in San Francisco", "AI safety companies in San Francisco", "recent NYC companies") by fanning out parallel subagents split by source, then merging into one terminal report. Never saves anywhere automatically — offers to save as an .md file or to the Company Research Notion database only after showing results. Use when the user asks to find or research companies in a segment or location.
+description: Deep-research a single market/company question (e.g. "ITSM companies in San Francisco", "AI safety companies in San Francisco", "recent YC companies") by fanning out parallel subagents split by source, then merging into one terminal report. Never saves anywhere automatically — offers to save as an .md file or to the Company Research Notion database only after showing results. Use when the user asks to find or research companies in a segment or location.
 ---
 
 # Deep Search
@@ -17,7 +17,7 @@ is already shown — never save unprompted.
 ## Step 1 — Scope the query
 
 If the query's time window or sector is genuinely ambiguous (e.g. "recent
-NYC companies" could mean recent funding, recent launches, or both), ask
+YC companies" could mean recent funding, recent launches, or both), ask
 one quick clarifying question before spawning anything. Don't ask for
 queries that are already unambiguous ("AI safety companies in San
 Francisco" needs no clarification).
