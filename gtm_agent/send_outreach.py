@@ -7,21 +7,28 @@ X Handle, or LinkedIn). It never touches `Send Via` — that's entirely a
 human decision made afterwards in Notion — and it never sends anything.
 Every draft is written in Email format (subject + body); which parts
 actually get used depends on whatever channel a human later picks (see
-below), not on what's drafted.
+below), not on what's drafted. Anyone with a LinkedIn URL on file
+additionally gets a `LinkedIn Note` drafted — a separate, much shorter
+format (200-char hard cap, LinkedIn's own limit on connection-request
+notes), not a reuse of Message.
 
 Without `--draft-only`, this is the deliberate send step (what
 `publish-paper-outreach` runs): sends to every author with a `Send Via` set
 in Notion — a human picking a channel *is* the authorization, nothing else
 is checked. If `Send Via` is Email, the Subject + Message are both used; if
-it's X or LinkedIn, only the Message is used and the Subject is dropped.
+it's X, only the Message is used and the Subject is dropped; if it's
+LinkedIn, the `LinkedIn Note` field is what matters, not Message.
 Anyone with no `Send Via` set is left alone entirely.
 
 Sending: X sends a real DM if a valid OAuth token (dm.write scope — run
 x_oauth_login.py) and the author's X Handle are both available. Email sends
 via Gmail if a valid OAuth token (run gmail_oauth_login.py) and the author's
-Email are both available. LinkedIn is still a stub — it has no third-party
-send API at all, ever, so it always drafts and prints for you to copy-paste,
-and Status stays "Message Drafted" rather than "Sent".
+Email are both available. LinkedIn is deliberately never sent for you —
+there is no official API for sending a LinkedIn connection request, and the
+unofficial ones require your raw LinkedIn password and risk the account
+being restricted, so this always drafts the note and prints it for you to
+paste into the connection request by hand; Status stays "Message Drafted"
+rather than "Sent".
 
 Whatever went wrong on a failed/skipped send attempt (no OAuth token, no
 contact on file, LinkedIn having no send API, an API error) is written to
@@ -121,7 +128,14 @@ def attempt_send(
             return False, f"X send failed: {e}", None
         return True, f"Sent via X DM to {x_handle}.", None
     if channel == "LinkedIn":
-        return False, "LinkedIn has no send API — copy the Message column and send manually.", None
+        if not message:
+            return False, "No LinkedIn Note drafted yet for this author.", None
+        return (
+            False,
+            "LinkedIn has no send API — copy the LinkedIn Note column into the "
+            "connection request's note field and send manually.",
+            None,
+        )
     return False, f"Unknown channel {channel!r}.", None
 
 
@@ -159,6 +173,26 @@ def draft_messages(
         a["subject"] = subject
         print(f"  {a['name']}: drafted\n    Subject: {subject}\n    {body}\n")
 
+    # LinkedIn's connection note is a separate, much shorter format than the
+    # email draft above (200-char hard cap, LinkedIn's own limit on connection
+    # notes) — drafted independently, into its own field, for anyone with a
+    # LinkedIn URL on file who doesn't have one yet.
+    to_draft_linkedin = [a for a in authors if not a["linkedin_note"] and a["linkedin"]]
+    if not to_draft_linkedin:
+        return
+
+    try:
+        linkedin_draft = outreach_message(paper_blurb_text=paper_row["blurb"], channel="LinkedIn", tone_examples=tone_examples)
+    except OutreachLLMError as e:
+        print(f"  LinkedIn note drafting failed: {e}")
+        return
+
+    note = linkedin_draft.strip()[:200]
+    for a in to_draft_linkedin:
+        notion.set_author_linkedin_note(a["id"], note, status="Message Drafted")
+        a["linkedin_note"] = note  # so a later step sees it without a re-fetch
+        print(f"  {a['name']}: drafted LinkedIn note ({len(note)} chars)\n    {note}\n")
+
 
 def send_for_paper(
     notion: NotionClient,
@@ -195,20 +229,26 @@ def send_for_paper(
     if not to_send:
         return
 
-    draft_messages(notion, paper_row, [a for a in to_send if not a["message"]], tone_examples)
+    # Passed uncut — draft_messages decides per-field (Message vs LinkedIn
+    # Note) whether an author still needs drafting, since one author can be
+    # missing one and not the other.
+    draft_messages(notion, paper_row, to_send, tone_examples)
 
     for author in to_send:
         if author["status"] == "Sent":
             continue  # already sent — never resend on a re-run
-        if not author["message"]:
-            continue  # drafting failed above, already reported
         channel = author["send_via"]
+        content = author["linkedin_note"] if channel == "LinkedIn" else author["message"]
+        if not content:
+            continue  # drafting failed above, already reported
         subject = author.get("subject") or "" if channel == "Email" else ""
         sent, note, thread_ref = attempt_send(
-            channel, author["message"], author["email"] or "", author["x_handle"],
+            channel, content, author["email"] or "", author["x_handle"],
             x_access_token, gmail_access_token, subject=subject,
         )
-        if sent:
+        if channel == "LinkedIn":
+            notion.set_author_linkedin_note(author["id"], content, status="Message Drafted", post_error=note)
+        elif sent:
             notion.set_author_message(author["id"], author["message"], status="Sent", post_error="")
             notion.record_initial_send(author["id"], thread_ref, date.today().isoformat())
         else:

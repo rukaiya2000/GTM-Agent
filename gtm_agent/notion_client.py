@@ -472,6 +472,7 @@ class NotionClient:
                     "send_via": _select_name(props.get("Send Via")),
                     "subject": _plain_text(props.get("Subject")),
                     "message": _plain_text(props.get("Message")),
+                    "linkedin_note": _plain_text(props.get("LinkedIn Note")),
                     "post_error": _plain_text(props.get("Post Error")),
                     "status": _select_name(props.get("Status")),
                     "scheduled_time": _date_start(props.get("Scheduled Time")),
@@ -578,6 +579,20 @@ class NotionClient:
 
     def set_author_status(self, page_id: str, status: str) -> None:
         self.update_page(page_id, {"Status": {"select": {"name": status}}})
+
+    def set_author_linkedin_note(
+        self, page_id: str, note: str, status: str | None = None, post_error: str | None = None
+    ) -> None:
+        """Separate from set_author_message — LinkedIn's connection-request
+        note is a distinct, 200-char-capped field, not a rename/reuse of
+        Message (which stays Email/X's, and is what other channels' Status
+        transitions key off)."""
+        properties: dict = {"LinkedIn Note": {"rich_text": [{"text": {"content": note[:2000]}}]}}
+        if status:
+            properties["Status"] = {"select": {"name": status}}
+        if post_error is not None:
+            properties["Post Error"] = {"rich_text": [{"text": {"content": post_error[:2000]}}]}
+        self.update_page(page_id, properties)
 
     def update_page(self, page_id: str, properties: dict) -> None:
         response = requests.patch(

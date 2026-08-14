@@ -528,10 +528,13 @@ not created for you. In Notion, create:
   (email), `X Handle` (text), `LinkedIn` (url), `Selected` (checkbox, not
   currently used by any script — `Send Via` is what authorizes a send),
   `Send Via` (select: `Email`, `X`, `LinkedIn` — left blank by drafting, set
-  by hand when you're ready to send), `Subject` (text, Email only — X/LinkedIn
-  DMs have no subject line and leave it blank), `Message` (text, body only),
-  `Post Error` (text, what went wrong on a failed/skipped send — cleared on a
-  later successful send), `Status` (select: `Needs Handles`, `Draft Ready`,
+  by hand when you're ready to send), `Subject` (text, Email only — X DMs
+  have no subject line and leave it blank), `Message` (text, body only —
+  Email/X), `LinkedIn Note` (text, ≤200 chars, LinkedIn's own cap on
+  connection-request notes — drafted separately from `Message`, never sent
+  automatically, see below), `Post Error` (text, what went wrong on a
+  failed/skipped send — cleared on a later successful send), `Status`
+  (select: `Needs Handles`, `Draft Ready`,
   `Needs Review`, `Message Drafted`, `Sent`, `Followup 1 Sent`,
   `Followup 2 Sent`, `Replied`), `Scheduled Time` (date, optional — see
   below), `First Sent` (date), `Last Sent` (date), `Thread Ref` (text),
@@ -593,11 +596,14 @@ This drafts a `Subject` + `Message` for every author who doesn't have one
 yet and has an Email, X Handle, or LinkedIn on file, always in Email format
 (subject + body) regardless of which contact they actually have — which
 parts get used depends on whatever channel is picked at send time, not on
-this. Pulls tone from your own previously `Sent` messages as few-shot
-examples. Authors with no contact info at all are skipped and reported.
-`Status` becomes `Message Drafted`; nothing is ever sent in this mode, and
-`Send Via` is left exactly as it was (blank, unless you'd already set it
-yourself).
+this. Anyone with a LinkedIn URL on file additionally gets a `LinkedIn Note`
+drafted separately — a distinct field, hard-capped at 200 characters
+(LinkedIn's own limit on connection-request notes), truncated defensively
+if the model overshoots. Pulls tone from your own previously `Sent` messages
+as few-shot examples. Authors with no contact info at all are skipped and
+reported. `Status` becomes `Message Drafted`; nothing is ever sent in this
+mode, and `Send Via` is left exactly as it was (blank, unless you'd already
+set it yourself).
 
 Review the drafts in Notion, edit anything you want, and set `Send Via`
 (`Email`/`X`/`LinkedIn`) by hand on whoever you want to actually reach —
@@ -609,19 +615,21 @@ that choice alone is what authorizes a send, nothing else is checked. Then:
 
 This sends to every author with a `Send Via` set — anyone still blank is
 left alone entirely. `Send Via` also decides what gets used: `Email` sends
-the Subject + Message together; `X`/`LinkedIn` send the Message only and the
-Subject is dropped. `Scheduled Time` is an optional additional gate: leave it
-blank to send immediately (unchanged default behavior), or set a future time
-to hold that author until a later run — this is a plain local due-time check,
-not a Typefully push, since Typefully has no DM support and these sends
-always go through the direct Gmail/X API. Anyone still missing a `Message` at
-this point gets one drafted first, same as run 2. Then it attempts to send:
+the Subject + Message together; `X` sends the Message only, Subject dropped;
+`LinkedIn` uses the separate `LinkedIn Note` field, not `Message` at all.
+`Scheduled Time` is an optional additional gate: leave it blank to send
+immediately (unchanged default behavior), or set a future time to hold that
+author until a later run — this is a plain local due-time check, not a
+Typefully push, since Typefully has no DM support and these sends always go
+through the direct Gmail/X API. Anyone still missing the relevant field for
+their channel (`Message` or `LinkedIn Note`) gets one drafted first, same as
+run 2. Then it attempts to send:
 
 | Channel | Requires | Behaviour |
 |---|---|---|
 | Email | `gmail_oauth_login.py` run, `Email` on file | Sends via Gmail; `Status` becomes `Sent` |
 | X | `x_oauth_login.py` run with `dm.write`, `X Handle` on file | Sends a real DM; `Status` becomes `Sent` |
-| LinkedIn | — | No third-party send API exists; always drafts and prints for you to copy-paste, `Status` stays `Message Drafted` |
+| LinkedIn | — | No safe API exists to automate this — LinkedIn has no official connection-request API, and the unofficial ones need your raw password and risk account restriction. Always drafts a `LinkedIn Note` and prints it for you to paste in by hand; `Status` stays `Message Drafted` |
 
 Whatever went wrong on a failed or skipped send (no OAuth token, no contact
 on file for that channel, LinkedIn's lack of a send API, an API error) is
@@ -872,7 +880,7 @@ Known limitations:
 | Articles require X Premium | A sparse `articles` bucket also means weak long-form voice matching until several are published. |
 | Paper-outreach follow-ups are capped at two | Matches the requested cadence; nothing is sent after Follow-up 2 goes unanswered, and meeting scheduling/calendar sync from `Req/paper-outreach.md` remain unimplemented. |
 | Paper Outreach/Paper Authors databases are hand-created | Unlike Tweet Drafts, `setup.py` does not provision them; see [Pipeline 3](#pipeline-3-paper-outreach). |
-| LinkedIn outreach send and reply tracking are stubs | No third-party LinkedIn API exists for either, so those rows always draft for manual copy-paste and are excluded from `send_followups.py`. |
+| LinkedIn outreach send and reply tracking are, by design, permanently manual | No official LinkedIn API exists for sending connection requests; unofficial ones need your raw password and risk account restriction, so this repo won't automate it. `LinkedIn Note` always drafts (≤200 chars) for manual copy-paste, and LinkedIn rows are excluded from `send_followups.py`. |
 | Author research spends Anthropic tokens | `research_authors.py` is the one component that bills an Anthropic API key (via the Claude Agent SDK); it is optional, capped per run, and its findings always land in `Needs Review` rather than being trusted. |
 
 ## Roadmap

@@ -1,6 +1,6 @@
 ---
 name: publish-paper-outreach
-description: Send real paper-outreach messages (Gmail/X DM) to every author with a Send Via set in Notion, and check for replies/send scheduled follow-ups on later runs. Use when the user explicitly asks to send/publish paper outreach, or to check outreach replies/follow-ups.
+description: Send real paper-outreach messages (Gmail/X DM) to every author with a Send Via set in Notion, draft a LinkedIn connection-request note for LinkedIn authors (never auto-sent — no safe API for that), and check for replies/send scheduled follow-ups on later runs. Use when the user explicitly asks to send/publish paper outreach, or to check outreach replies/follow-ups.
 ---
 
 # Publish Paper Outreach
@@ -54,8 +54,17 @@ on file for that channel, LinkedIn's lack of a send API, an API error) gets
 written into the `Post Error` column so the reason is visible directly in
 Notion — a later successful send clears it. Report per author: channel,
 whether it sent or only drafted (and why, if it only drafted), and the
-message text (with Subject, for Email) for anything that needs manual
-copy-paste.
+content for anything that needs manual copy-paste — `Message` (with
+`Subject`, for Email) for Email/X, or `LinkedIn Note` for LinkedIn.
+
+`Send Via = LinkedIn` never actually sends anything — there's no official
+LinkedIn API for sending a connection request, and the unofficial ones
+require your raw LinkedIn password and risk the account getting restricted,
+so this is a hard boundary, not a gap to fill in later. Instead, a
+`LinkedIn Note` (rich text, ≤200 characters — LinkedIn's own cap on
+connection-request notes) is drafted separately from `Message`, and printed
+for you to paste into the connection request by hand. `Status` stays
+`Message Drafted`, never `Sent`, for these rows.
 
 ## Checking replies / sending follow-ups
 

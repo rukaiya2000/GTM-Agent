@@ -85,7 +85,7 @@ def paper_blurb(paper: dict, notes: str = "", tone_examples: list[str] | None = 
 
 CHANNEL_GUIDANCE = {
     "Email": "A cold email. Give it a subject line on the first line prefixed 'Subject: ', then the body. Keep the body under 130 words.",
-    "LinkedIn": "A LinkedIn connection note. Hard limit of 280 characters total. No subject line, no signature.",
+    "LinkedIn": "A LinkedIn connection-request note. Hard limit of 200 characters total (LinkedIn's own cap on connection notes) — this is not negotiable, stay under it. No subject line, no signature.",
     "X": "A direct message on X. Under 400 characters, conversational, no subject line.",
 }
 

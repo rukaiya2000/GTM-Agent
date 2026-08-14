@@ -1,6 +1,6 @@
 ---
 name: paper-outreach
-description: Fetch a staged paper's authors, web-research missing contact handles, and draft Email/X/LinkedIn outreach messages (Subject + Message) for every author — all in one pass, no manual Notion setup required first. Never sends anything; see publish-paper-outreach for that. Use when the user asks to run paper outreach, fetch paper authors, or draft outreach for a paper.
+description: Fetch a staged paper's authors, web-research missing contact handles, and draft Email/X outreach messages (Subject + Message) plus a 200-char LinkedIn connection-request note for every author — all in one pass, no manual Notion setup required first. Never sends anything; see publish-paper-outreach for that. Use when the user asks to run paper outreach, fetch paper authors, or draft outreach for a paper.
 ---
 
 # Paper Outreach
@@ -94,14 +94,17 @@ since there's no contact to draft against.
 Drafts a `Subject` + `Message` for every author who doesn't have one yet and
 has *some* contact info on file (Email, X Handle, or LinkedIn) — always in
 Email format (subject + body), regardless of what contact info they actually
-have. This skill never touches `Send Via` at all — that's entirely the
-human's decision, made afterward in Notion. A hand-written `Message` or
-`Subject` is always used as-is and never overwritten. **This never sends
-anything** — Status lands on `Message Drafted`, ready for the user to review.
+have. Anyone with a LinkedIn URL on file additionally gets a `LinkedIn Note`
+drafted — a separate field, capped at 200 characters (LinkedIn's own limit
+on connection-request notes), not a rename or reuse of `Message`. This skill
+never touches `Send Via` at all — that's entirely the human's decision, made
+afterward in Notion. A hand-written `Message`, `Subject`, or `LinkedIn Note`
+is always used as-is and never overwritten. **This never sends anything** —
+Status lands on `Message Drafted`, ready for the user to review.
 
-Report per author: the drafted Subject + Message, and anyone skipped for
-having no contact info at all on file (nothing to ever send it through,
-regardless of channel).
+Report per author: the drafted Subject + Message (and LinkedIn Note, if
+drafted), and anyone skipped for having no contact info at all on file
+(nothing to ever send it through, regardless of channel).
 
 When Step 3 is done, tell the user the drafts are ready for review in Notion
 — they still need to pick `Send Via` per author themselves — and that
@@ -122,7 +125,7 @@ new was staged.
 - If a script exits with a config error (missing `NOTION_API_TOKEN`,
   `OPENAI_API_KEY`, etc.), surface that directly — don't try to work around
   it.
-- A hand-written `Message` or `Subject` in Notion is always used as-is and
-  never overwritten by Step 3.
+- A hand-written `Message`, `Subject`, or `LinkedIn Note` in Notion is always
+  used as-is and never overwritten by Step 3.
 - This skill never touches Gmail/X OAuth or sends anything — that's entirely
   `publish-paper-outreach`'s job.
