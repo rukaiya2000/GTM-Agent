@@ -1,14 +1,13 @@
 ---
 name: discover-and-draft-x-replies
-description: Fetch new posts into the Response Calendar and draft Reply 1/2/3 plus a suggested retweet message for every row — hybrid routing spawns parallel research subagents only for tweets referencing external content (links, threads, papers), grouped by shared source; self-contained tweets are drafted inline. Statuses belong to the author; the skill only advises. Use when the user asks to find posts to engage with, discover new posts, draft replies, or work through their Response Calendar.
+description: Fetch new posts into the Response Calendar and draft Reply 1/2/3 for every row — hybrid routing spawns parallel research subagents only for tweets referencing external content (links, threads, papers), grouped by shared source; self-contained tweets are drafted inline. Statuses belong to the author; the skill only advises. Use when the user asks to find posts to engage with, discover new posts, draft replies, or work through their Response Calendar.
 ---
 
 # Discover and Draft X Replies
 
 Two jobs: **fetch** candidates (deterministic script, costs money per read),
-then **draft the full option set** for every new row — three replies plus a
-suggested retweet message, each **grounded in the sources the tweet actually
-references**. Drafting fans out across parallel subagents, one per row.
+then **draft the full option set** for every new row — three replies, each
+**grounded in the sources the tweet actually references**. Drafting fans out across parallel subagents, one per row.
 **You never post anything**, and **you never change `Status` on your own** —
 every fetched row stays `New` until the author moves it. Curation is advice
 in your report, not writes. Automated engagement is what gets accounts
@@ -29,15 +28,17 @@ not guess at a different database.
 **Every `Status` transition is the author's.** New rows arrive as `New` and
 stay `New` — they review, edit drafts, reject, and promote themselves. The
 only exception: when they explicitly ask you to stage a row ("stage this one",
-"use reply 2", "just retweet it"), set `Selected` (and `Retweet Message` if
-quoting), `Scheduled Time`, and `Status = Ready to post`. Never set any other
-status, and never set `Posted` under any circumstances — it records that a
-reply/retweet actually went out and is the signal your advice learns from.
+"use reply 2", "just retweet it"), set `Selected`, `Scheduled Time`, and
+`Status = Ready to post`. Never set any other status, and never set `Posted`
+under any circumstances — it records that a reply/retweet actually went out
+and is the signal your advice learns from.
 
-Fields per row: `Reply 1/2/3` (three reply options), `Retweet Message`
-(suggested quote text — the author clears it for a plain retweet), `Selected`
+Fields per row: `Reply 1/2/3` (three reply options), `Selected`
 (`Reply 1/2/3`, `Self-Written Reply`, or `Retweet` — their choice; there's no
-`Like` option, that action was cut entirely), `Self-Written Reply` (theirs),
+`Like` option, that action was cut entirely, and `Retweet` means a plain
+repost with no text: X withdrew quote-posting from all self-serve API tiers
+in 2026, so `Retweet Message` is a legacy field — never draft into it, and
+never fill it when staging), `Self-Written Reply` (theirs),
 `Scheduled Time` (when it should actually post — required for `Ready to
 post` rows), `Added Date` (when the row entered the calendar), `Original
 Tweet Date` (when the post was tweeted).
@@ -112,7 +113,6 @@ root) and follow them:
 ```json
 [{"page_id": "<the Notion page id you were given for this row>",
   "reply_1": "...", "reply_2": "...", "reply_3": "...",
-  "retweet_message": "...",
   "grounding": "<one line naming the sources actually read>",
   "ungrounded": false}]
 ```
@@ -128,9 +128,9 @@ pasting the rules into each prompt.
 
 ### Writing back (you, never the subagents)
 
-Collect every subagent's JSON, then write `Reply 1/2/3` and
-`Retweet Message` to each row via `notion-update-page`, directly, no chat
-approval first — review happens in Notion. Leave `Status = New`. A subagent
+Collect every subagent's JSON, then write `Reply 1/2/3` to each row via
+`notion-update-page`, directly, no chat approval first — review happens in
+Notion. Leave `Status = New`. A subagent
 that returns malformed JSON or times out: redo that row yourself rather than
 leaving it blank.
 
@@ -163,8 +163,8 @@ re-judging thinness from scratch.
 
 One report at the end: how many rows were staged and the subagent/inline
 split (how many rows needed research versus were drafted directly), then
-the rows ranked most promising first — for each, the three replies and the
-retweet suggestion with a few words on the angle each takes, **what sources
+the rows ranked most promising first — for each, the three replies with a
+few words on the angle each takes, **what sources
 were actually read** (from `grounding`; "none needed" for inline rows), and
 which option you'd send. Call out any `ungrounded` rows so the author knows
 those drafts are shallower. Then the likely-skips with a one-line reason

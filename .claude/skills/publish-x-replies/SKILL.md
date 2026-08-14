@@ -1,6 +1,6 @@
 ---
 name: publish-x-replies
-description: Push every "Ready to post" reply row in the Response Calendar Notion database to Typefully for scheduled publishing (marking it "Scheduled"), post any due retweet/quote-retweet directly, and reconcile previously-scheduled Typefully drafts. Use when the user asks to post their staged replies, send their engagement queue, or run the reply-posting worker.
+description: Push every "Ready to post" reply row in the Response Calendar Notion database to Typefully for scheduled publishing (marking it "Scheduled"), post any due plain retweet directly, and reconcile previously-scheduled Typefully drafts. Use when the user asks to post their staged replies, send their engagement queue, or run the reply-posting worker.
 ---
 
 # Publish X Replies
@@ -48,12 +48,15 @@ at the already-decided time, nothing more.
   to `Scheduled` and the returned draft id is written to `Typefully Draft ID`.
 - `Retweet` rows are unaffected by Typefully (no confirmed retweet-an-
   arbitrary-tweet endpoint there) — still filtered to ones whose
-  `Scheduled Time` has passed, and posted directly: `Retweet Message` filled
-  in quote-retweets with that text; empty does a plain retweet, no text.
-  There is no `Like` action — it was cut deliberately (see Notes).
-- On direct-post success: sets `Status = Posted` and appends the quote text
-  to `voice_corpus.json` (plain retweets carry no text, so nothing to learn
-  from — nothing is appended for those).
+  `Scheduled Time` has passed, and posted directly as a **plain retweet, no
+  text**. Quote-retweeting is gone: X withdrew quote-posting (and API
+  replies to posts that don't mention the account) from all self-serve
+  tiers in 2026, and X Premium doesn't restore it — only Enterprise. A row
+  with a leftover `Retweet Message` is skipped with that reason written to
+  `Post Error` (clear the message to plain-repost, or post the quote by
+  hand). There is no `Like` action — it was cut deliberately (see Notes).
+- On direct-post success: sets `Status = Posted` (plain retweets carry no
+  text, so nothing is appended to `voice_corpus.json`).
 - On failure (either path): writes the error to `Post Error`, leaves
   `Status` alone (so it's retried on the next invocation), and keeps going
   rather than aborting the whole batch.

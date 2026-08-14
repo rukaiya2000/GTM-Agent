@@ -172,11 +172,7 @@ def _post(path: str, access_token: str, body: dict | None = None) -> dict:
     if response.status_code == 402:
         raise XApiError(402, "payment required — pay-per-use credits depleted")
     if response.status_code == 403:
-        raise XApiError(
-            403,
-            f"forbidden — the account may lack the required entitlement "
-            f"(Articles need X Premium): {response.text}",
-        )
+        raise XApiError(403, f"forbidden: {response.text}")
     if not response.ok:
         raise XApiError(response.status_code, response.text)
     return response.json()
@@ -186,23 +182,23 @@ def post_tweet(
     text: str,
     access_token: str,
     reply_to_tweet_id: str | None = None,
-    quote_tweet_id: str | None = None,
 ) -> dict:
     """Post a tweet.
 
     Pass reply_to_tweet_id to chain this tweet as a reply to a previous one —
-    that's how threads are built, one call per tweet. Pass quote_tweet_id to
-    quote-tweet another post instead (the two are mutually exclusive)."""
+    that's how threads are built, one call per tweet. Note X only allows API
+    replies to posts whose author mentioned or quoted this account (Feb 2026
+    policy, all self-serve tiers); quote-posting via the API was withdrawn
+    entirely (Apr 2026), so there is no quote_tweet_id option here."""
     body = {"text": text}
     if reply_to_tweet_id:
         body["reply"] = {"in_reply_to_tweet_id": reply_to_tweet_id}
-    if quote_tweet_id:
-        body["quote_tweet_id"] = quote_tweet_id
     return _post("/tweets", access_token, body)
 
 
 def retweet(user_id: str, tweet_id: str, access_token: str) -> dict:
-    """Retweet (repost) another tweet as-is, no added text."""
+    """Retweet (repost) another tweet as-is, no added text. Still available on
+    self-serve API tiers, unlike quote-posting."""
     return _post(f"/users/{user_id}/retweets", access_token, {"tweet_id": tweet_id})
 
 

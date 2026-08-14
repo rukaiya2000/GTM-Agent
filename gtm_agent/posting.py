@@ -1,14 +1,14 @@
 import re
+from datetime import datetime
 
 from gtm_agent.notion_client import NotionApiError, NotionClient
 from gtm_agent.typefully_client import TypefullyApiError, create_draft
-from gtm_agent.voice_corpus import append_article, append_tweet
+from gtm_agent.voice_corpus import append_article
 from gtm_agent.x_client import (
     ArticlePublishError,
     XApiError,
     get_authenticated_user_id,
     post_article,
-    post_tweet,
     retweet,
     tweet_id_from_url,
 )
@@ -80,7 +80,7 @@ def push_row_to_typefully(notion: NotionClient, row: dict) -> tuple[bool, str]:
         except ThreadValidationError as e:
             return False, _record_error(notion, row["id"], str(e))
 
-    publish_at = row.get("scheduled_time") or "now"
+    publish_at = _typefully_publish_at(row.get("scheduled_time") or "")
     try:
         draft_id = create_draft(posts, publish_at=publish_at, draft_title=row.get("title") or None)
     except TypefullyApiError as e:
@@ -175,6 +175,24 @@ def _post_article(
     return True, f"Published article: {posted_url}"
 
 
+def _typefully_publish_at(scheduled_time: str) -> str:
+    """Typefully requires publish_at to be a timezone-aware datetime (or the
+    literal "now"/"next-free-slot") and rejects naive or past values. Notion
+    dates arrive date-only or naive — treat those as local time — and a time
+    that's already due becomes "now"."""
+    if not scheduled_time:
+        return "now"
+    try:
+        when = datetime.fromisoformat(scheduled_time)
+    except ValueError:
+        return "now"
+    if when.tzinfo is None:
+        when = when.astimezone()
+    if when <= datetime.now().astimezone():
+        return "now"
+    return when.isoformat()
+
+
 def _record_error(notion: NotionClient, page_id: str, message: str) -> str:
     try:
         notion.set_post_error(page_id, message)
@@ -215,7 +233,7 @@ def push_response_row_to_typefully(notion: NotionClient, row: dict) -> tuple[boo
             f"Row {row['id']} reply is {len(text)} chars, over the {MAX_TWEET_CHARS} limit.",
         )
 
-    publish_at = row.get("scheduled_time") or "now"
+    publish_at = _typefully_publish_at(row.get("scheduled_time") or "")
     try:
         draft_id = create_draft([text], publish_at=publish_at, reply_to_url=row["url"])
     except TypefullyApiError as e:
@@ -233,7 +251,7 @@ def push_response_row_to_typefully(notion: NotionClient, row: dict) -> tuple[boo
 def post_response_calendar_row(
     notion: NotionClient, row: dict, access_token: str
 ) -> tuple[bool, str]:
-    """Direct-X-API posting — now only for a plain or quote retweet
+    """Direct-X-API posting — now only for a plain retweet
     (Selected='Retweet'). Reply rows go through
     push_response_row_to_typefully instead."""
     selected = row.get("selected")
@@ -258,17 +276,19 @@ def post_response_calendar_row(
 def _post_retweet(
     notion: NotionClient, row: dict, tweet_id: str, access_token: str
 ) -> tuple[bool, str]:
+    # Quote-retweeting is gone: X withdrew quote-posting (and API replies to
+    # posts that don't mention this account) from all self-serve tiers in
+    # 2026, and Premium doesn't restore it. A leftover Retweet Message is
+    # human-approved text that can no longer go out — refuse rather than
+    # silently repost without it.
     message = row["retweet_message"].strip()
-
     if message:
-        try:
-            result = post_tweet(message, access_token, quote_tweet_id=tweet_id)
-        except XApiError as e:
-            return False, _record_error(notion, row["id"], f"Quote-retweet failed: {e}")
-        new_id = result["data"]["id"]
-        posted_url = f"https://x.com/i/web/status/{new_id}"
-        return _finish_response_row(
-            notion, row["id"], message, "quote", new_id, posted_url
+        return False, _record_error(
+            notion,
+            row["id"],
+            "This row has a Retweet Message, but X removed quote-posting from "
+            "self-serve API tiers — clear Retweet Message to plain-repost, or "
+            "post the quote by hand.",
         )
 
     try:
@@ -282,21 +302,3 @@ def _post_retweet(
     except NotionApiError as e:
         return True, f"Retweeted (no message, nothing to learn from) but failed to update Notion: {e}"
     return True, "Retweeted (no message, nothing to learn from)."
-
-
-def _finish_response_row(
-    notion: NotionClient,
-    page_id: str,
-    text: str,
-    post_type: str,
-    tweet_id: str,
-    posted_url: str,
-) -> tuple[bool, str]:
-    try:
-        notion.mark_response_row_posted(page_id)
-    except NotionApiError as e:
-        append_tweet(text, post_type=post_type, tweet_id=tweet_id, posted_url=posted_url)
-        return True, f"Posted ({posted_url}) but failed to update Notion: {e}"
-
-    append_tweet(text, post_type=post_type, tweet_id=tweet_id, posted_url=posted_url)
-    return True, f"Posted: {posted_url}"

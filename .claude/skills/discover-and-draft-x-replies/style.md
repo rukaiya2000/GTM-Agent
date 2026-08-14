@@ -19,9 +19,7 @@ confidence level. It supplements this file; where the two disagree, the
 binding rules below win.
 
 A reply is responsive and conversational: it assumes the original post as
-context and doesn't re-introduce what the reader can already see. A retweet
-message is closer to a broadcast: it frames the post for the author's
-followers in one or two sentences.
+context and doesn't re-introduce what the reader can already see.
 
 ## Standing style direction (binding — beats any corpus habit)
 
@@ -42,7 +40,9 @@ concrete detail or counter-example from the sources read; directly relevant
 first-hand experience; a specific genuine question; a respectful
 complication of a claim; a connection to adjacent work.
 
-`retweet_message` — one suggested quote line framing the post, same style.
+(There is no `retweet_message` anymore — X withdrew quote-posting from
+self-serve API tiers in 2026, so `Retweet` now means a plain repost with no
+text. Don't draft quote lines.)
 
 ## Hard rules
 
