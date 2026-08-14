@@ -172,11 +172,37 @@ async def run_research(prompt: str) -> tuple[str | None, float | None]:
     return result_text, cost
 
 
-def apply_findings(notion: NotionClient, tasks: list[dict], results: list, dry_run: bool) -> None:
-    by_name = {_normalize(r.get("name", "")): r for r in results if isinstance(r, dict)}
+def _match_results(tasks: list[dict], results: list) -> list[dict | None]:
+    """Pairs each task with its result. The orchestrator prompt guarantees
+    results come back one per author, in task order, so position is matched
+    first — this is immune to two different authors (e.g. on different
+    papers in the same batch) sharing a name. Only if the agent returned a
+    different count than requested do we fall back to name matching, and
+    even then a name shared by more than one task in this batch is treated
+    as unresolvable rather than guessed at, since we've lost the ordering
+    signal that would disambiguate them."""
+    if len(results) == len(tasks):
+        return [r if isinstance(r, dict) else None for r in results]
+
+    by_name: dict[str, list[dict]] = {}
+    for r in results:
+        if isinstance(r, dict):
+            by_name.setdefault(_normalize(r.get("name", "")), []).append(r)
+    name_counts: dict[str, int] = {}
     for task in tasks:
+        key = _normalize(task["row"]["name"])
+        name_counts[key] = name_counts.get(key, 0) + 1
+
+    matched = []
+    for task in tasks:
+        key = _normalize(task["row"]["name"])
+        matched.append(None if name_counts[key] > 1 else (by_name.get(key) or [None])[0])
+    return matched
+
+
+def apply_findings(notion: NotionClient, tasks: list[dict], results: list, dry_run: bool) -> None:
+    for task, found in zip(tasks, _match_results(tasks, results)):
         row = task["row"]
-        found = by_name.get(_normalize(row["name"]))
         if not found:
             print(f"  {row['name']}: no result returned")
             continue

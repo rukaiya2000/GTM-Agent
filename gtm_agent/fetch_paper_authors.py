@@ -149,7 +149,12 @@ def process_paper(
     if fetch_all:
         to_fetch = authors
     else:
-        extra = input("  Also fetch anyone by name (comma-separated, or Enter to skip): ").strip()
+        try:
+            extra = input("  Also fetch anyone by name (comma-separated, or Enter to skip): ").strip()
+        except EOFError:
+            # stdin closed (script run unattended without `yes ""` piped in)
+            # — treat as Enter rather than crashing the rest of the batch.
+            extra = ""
         if extra:
             wanted = {n.strip().lower() for n in extra.split(",") if n.strip()}
             to_fetch += [a for a in authors if a["name"].lower() in wanted and a["name"] not in top_names]
