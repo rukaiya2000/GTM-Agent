@@ -2,7 +2,7 @@
 
 A reply you chose and posted is as much your voice as an original post, but it
 only lives in Notion. This copies it into voice_corpus.json so
-draft-x-replies and polish-x-drafts can learn from it.
+discover-and-draft-x-replies and polish-x-drafts can learn from it.
 
 Reads rows with `Status = Posted` where `Selected` names something with text:
 a reply field (learned as post_type "reply") or a quote-retweet's

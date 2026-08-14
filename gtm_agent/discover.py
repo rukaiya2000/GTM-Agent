@@ -1,7 +1,7 @@
 """Find posts worth engaging with and stage them in the Response Calendar.
 
 Sources come from interests.md (accounts + topics). Ranking is plain engagement
-math — no LLM — so re-running is cheap and deterministic. The draft-x-replies
+math — no LLM — so re-running is cheap and deterministic. The discover-and-draft-x-replies
 skill does the relevance judgment afterwards, using the `status` column
 (Commented / Rejected / not-commented) on existing rows as signal.
 """
@@ -184,7 +184,7 @@ def main() -> int:
     print(f"\nStaged {written} post(s) to Response Calendar as Status = New.")
     if failed:
         print(f"{failed} failed to write.")
-    print("Next: run the draft-x-replies skill to prune by past signal.")
+    print("Next: run the discover-and-draft-x-replies skill to prune by past signal.")
     return 0
 
 

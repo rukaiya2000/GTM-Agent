@@ -1,9 +1,9 @@
 ---
-name: draft-x-replies
+name: discover-and-draft-x-replies
 description: Fetch new posts into the Response Calendar and draft Reply 1/2/3 plus a suggested retweet message for every row — hybrid routing spawns parallel research subagents only for tweets referencing external content (links, threads, papers), grouped by shared source; self-contained tweets are drafted inline. Statuses belong to the author; the skill only advises. Use when the user asks to find posts to engage with, discover new posts, draft replies, or work through their Response Calendar.
 ---
 
-# Draft X Replies
+# Discover and Draft X Replies
 
 Two jobs: **fetch** candidates (deterministic script, costs money per read),
 then **draft the full option set** for every new row — three replies plus a
@@ -90,7 +90,7 @@ research procedure yourself, sequentially, for the rows that need it.
 Give every subagent its group's rows (tweet text, URL, date, and Notion
 page id per row) and these instructions — **do not paste style or voice
 rules into the prompt**; instead instruct it to first read
-`.claude/skills/draft-x-replies/style.md` and `voice_corpus.json` (repo
+`.claude/skills/discover-and-draft-x-replies/style.md` and `voice_corpus.json` (repo
 root) and follow them:
 
 1. **Research before drafting — this is the point.** Resolve every t.co

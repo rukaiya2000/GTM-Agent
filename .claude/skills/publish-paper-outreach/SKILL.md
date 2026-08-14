@@ -12,7 +12,7 @@ trigger: run the script, report back what it did.
 
 This is deliberately separate from `paper-outreach`, which only fetches
 authors and drafts messages and never sends — same split as
-`draft-x-replies`/`publish-x-replies`. `paper-outreach` never touches
+`discover-and-draft-x-replies`/`publish-x-replies`. `paper-outreach` never touches
 `Send Via`; a human picks it by hand in Notion per author (Email/X/LinkedIn),
 after reviewing the draft, and that choice alone is the authorization to
 reach out — `Selected` is not checked at all.

@@ -26,8 +26,8 @@ Francisco" needs no clarification).
 
 Always split the same query by source, not by sub-topic. **Spawn all 3 in
 a single message so they run concurrently** — same pattern as
-`draft-x-replies`'s research subagents
-(`.claude/skills/draft-x-replies/SKILL.md:81-82`).
+`discover-and-draft-x-replies`'s research subagents
+(`.claude/skills/discover-and-draft-x-replies/SKILL.md:81-82`).
 
 1. **News/web** — general `WebSearch` for recent articles, launches, press
    coverage of the query.

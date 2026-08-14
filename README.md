@@ -72,7 +72,7 @@ work; skills add judgement on top (voice matching, curation, drafting).
 
 | Skill | What it does |
 |---|---|
-| `draft-x-replies` | Finds new posts worth replying to and drafts three reply options (plus a retweet message) in your voice. Never posts or changes status — you review and pick in Notion. |
+| `discover-and-draft-x-replies` | Finds new posts worth replying to and drafts three reply options (plus a retweet message) in your voice. Never posts or changes status — you review and pick in Notion. |
 | `publish-x-replies` | Publishes the replies/retweets you've marked ready in the Response Calendar, then reconciles anything scheduled via Typefully. |
 | `polish-x-drafts` | Turns a rough note in Notion into a polished single post, thread, or long-form article in your voice. |
 | `publish-x-queue` | Publishes the Tweet Drafts you've marked ready, then reconciles anything scheduled via Typefully. |

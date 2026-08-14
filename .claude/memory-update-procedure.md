@@ -10,7 +10,7 @@ each restate it.
 it must trace back to something real: a `Posted` row, a `Rejected (...)`
 row, an actual sent/replied outreach message, `voice_corpus.json` content,
 or `interests.md` config. Never invent a pattern to fill a file out — thin
-history gets reported as thin history, same as `draft-x-replies` already
+history gets reported as thin history, same as `discover-and-draft-x-replies` already
 does in its own Phase 3.
 
 ## Step 1 — Gather real evidence

@@ -2,7 +2,7 @@
 
 Replies to your posts, @-mentions and quotes are currently invisible to the rest
 of the system. They land in the same Response Calendar as discovered posts, so
-draft-x-replies works on them unchanged.
+discover-and-draft-x-replies works on them unchanged.
 
 Read-only against X. Nothing is replied to automatically.
 """

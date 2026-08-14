@@ -1,8 +1,8 @@
-# Token usage analysis — `draft-x-replies` runs
+# Token usage analysis — `discover-and-draft-x-replies` runs
 
 Point-in-time study, 2026-08-10. Measured from the Claude Code session
 transcript (per-message usage across 530 assistant messages, windowed
-between the five `/draft-x-replies` invocations of the day) plus the
+between the five `/discover-and-draft-x-replies` invocations of the day) plus the
 harness's per-subagent meters. Window caveat: each run's window extends
 until the *next* invocation, so trailing conversation bleeds in slightly.
 

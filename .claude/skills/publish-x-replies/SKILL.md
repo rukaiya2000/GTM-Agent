@@ -10,7 +10,7 @@ posting logic stays in tested code (`gtm_agent/post_response_calendar.py` +
 `gtm_agent/sync_typefully_status.py`), not LLM-driven reasoning. This skill
 is the trigger: run both scripts, report back what they did.
 
-This is deliberately separate from `draft-x-replies`, which never posts, and
+This is deliberately separate from `discover-and-draft-x-replies`, which never posts, and
 from `publish-x-queue`, which only knows the Tweet Drafts schema. A row only
 gets here because the author (or the AI assistant, on the author's explicit request)
 set `Selected`, `Scheduled Time`, and `Status = Ready to post` in the

@@ -15,7 +15,7 @@ setup docs.
 
 This skill only drafts — it never sends. Sending real messages and checking
 for replies/follow-ups is a deliberately separate skill, `publish-paper-outreach`,
-same split as `draft-x-replies`/`publish-x-replies`. If the user asks to
+same split as `discover-and-draft-x-replies`/`publish-x-replies`. If the user asks to
 actually send/publish outreach or check replies, use that skill instead.
 
 Two Notion databases: **Paper Outreach** (one row per paper) and **Paper
