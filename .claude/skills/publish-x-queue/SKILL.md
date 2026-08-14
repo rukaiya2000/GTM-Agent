@@ -1,13 +1,14 @@
 ---
 name: publish-x-queue
-description: Post every "Ready to post" row in the Tweet Drafts Notion database whose Scheduled Time has passed. Use when the user asks to post their ready tweets, publish everything that's due, or run the posting worker.
+description: Push every "Ready to post" single-thread/multi-thread row in the Tweet Drafts Notion database to Typefully for scheduled publishing (marking it "Scheduled"), post any due article directly, and reconcile previously-scheduled Typefully drafts. Use when the user asks to post their ready tweets, publish everything that's due, or run the posting worker.
 ---
 
 # Publish X Queue
 
 Posts real tweets to X and costs real money per post — the actual posting logic
-stays in tested code (`gtm_agent/post_all_due.py`), not LLM-driven reasoning. This
-skill is the trigger: run the script, report back what it did.
+stays in tested code (`gtm_agent/post_all_due.py` + `gtm_agent/sync_typefully_status.py`),
+not LLM-driven reasoning. This skill is the trigger: run both scripts, report
+back what they did.
 
 ## Steps
 
@@ -17,25 +18,41 @@ skill is the trigger: run the script, report back what it did.
    .venv/bin/python gtm_agent/post_all_due.py
    ```
 
-2. Report the script's output back to the user plainly — how many rows were due,
-   what got posted (with links), what failed and why. Don't editorialize or repeat
-   information the output already states clearly.
+2. Then run the reconciliation pass, which checks previously-pushed Typefully
+   drafts and flips them to `Posted` once Typefully has actually published them:
 
-## What the script does (for context, not to be reimplemented here)
+   ```bash
+   .venv/bin/python gtm_agent/sync_typefully_status.py
+   ```
 
-- Fetches all `Tweet Drafts` rows with `Stage = Ready to post`.
-- Filters to ones whose `Scheduled Time` is already in the past — a row with no
-  `Scheduled Time`, or one still in the future, is left untouched.
-- Posts each due row, one at a time, oldest-scheduled first, with a short pause
-  between posts. `single-thread` posts as one tweet; `multi-thread` posts as a
-  reply-chained thread (split on `---` separators in `Final Text`); `article`
-  publishes a long-form Article via `POST /2/articles/draft` + `/publish`, using
-  the `Title` property as the headline and `Final Text` as the body (falling back
-  to the first line of `Final Text` if `Title` is empty). Needs X Premium.
-- On success: sets `Stage = Posted` and appends the post to `voice_corpus.json`.
-- On failure: writes the error to `Post Error`, leaves `Stage` alone (so it's
-  retried on the next invocation), and keeps going to the next due row rather than
+3. Report both scripts' output back to the user plainly — what got pushed to
+   Typefully, what posted directly (with links), what resolved as published,
+   what failed and why. Don't editorialize or repeat information the output
+   already states clearly.
+
+## What the scripts do (for context, not to be reimplemented here)
+
+**`post_all_due.py`** — fetches all `Tweet Drafts` rows with `Stage = Ready to post`:
+- `single-thread`/`multi-thread` rows with no `Typefully Draft ID` yet are pushed to
+  Typefully immediately (not gated on `Scheduled Time` locally — Typefully owns that
+  gate from here via its own `publish_at`). On a successful push, `Stage` is set to
+  `Scheduled` and the returned draft id is written to `Typefully Draft ID`.
+- `article` rows are unaffected by Typefully (not a supported format there) —
+  still filtered to ones whose `Scheduled Time` has passed, and published
+  directly via `POST /2/articles/draft` + `/publish`, using the `Title` property
+  as the headline and `Final Text` as the body (falling back to the first line
+  of `Final Text` if `Title` is empty). Needs X Premium.
+- On article success: sets `Stage = Posted` and appends the post to `voice_corpus.json`.
+- On failure (either path): writes the error to `Post Error`, leaves `Stage`
+  alone (so it's retried on the next invocation), and keeps going rather than
   aborting the whole batch.
+
+**`sync_typefully_status.py`** — for every row with a `Typefully Draft ID` still
+at `Stage = Scheduled`, checks its status via the Typefully API:
+- `published` → sets `Stage = Posted` and appends the post to `voice_corpus.json`.
+- `error` → writes the error to `Post Error`, leaves `Stage` alone for manual retry.
+- anything else (`draft`/`scheduled`/`planned`/`publishing`) → still pending, no
+  change; check again on a later run.
 
 **Two partial-failure cases matter and must not be downplayed** — both leave state
 on X, and neither auto-retries because retrying would make it worse:

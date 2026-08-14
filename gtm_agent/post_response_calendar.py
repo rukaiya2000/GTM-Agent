@@ -8,7 +8,11 @@ from gtm_agent.config import (
     get_x_client_secret,
 )
 from gtm_agent.notion_client import NotionApiError, NotionClient
-from gtm_agent.posting import post_response_calendar_row
+from gtm_agent.posting import (
+    REPLY_FIELDS,
+    post_response_calendar_row,
+    push_response_row_to_typefully,
+)
 from gtm_agent.x_oauth import get_valid_access_token
 
 STATUS = "Ready to post"
@@ -48,32 +52,52 @@ def main() -> int:
         print(f"Notion request failed: {e}")
         return 1
 
+    # Reply rows push to Typefully as soon as they're Ready to post — Typefully
+    # owns the scheduling gate from there, not a local due-time check. Only
+    # rows not yet pushed (no Typefully Draft ID) are eligible. Retweet rows
+    # keep the local due-time gate and post immediately via the direct X API.
+    to_push = [
+        row
+        for row in rows
+        if row.get("selected") in REPLY_FIELDS and not row["typefully_draft_id"]
+    ]
     now = datetime.now(timezone.utc)
-    due = due_rows_sorted(rows, now)
+    due = due_rows_sorted(
+        [row for row in rows if row.get("selected") not in REPLY_FIELDS], now
+    )
 
-    if not due:
-        print(f"No '{STATUS}' row is due (Scheduled Time in the past). Nothing to do.")
+    if not to_push and not due:
+        print(f"No '{STATUS}' row to push or due. Nothing to do.")
         return 0
 
-    print(f"{len(due)} row(s) due. Posting one at a time...")
+    pushed, posted, failed = 0, 0, 0
 
-    posted, failed = 0, 0
-    for i, row in enumerate(due):
-        try:
-            access_token = get_valid_access_token(client_id, client_secret)
-        except ConfigError as e:
-            print(f"Config error: {e}")
-            return 1
+    if to_push:
+        print(f"{len(to_push)} row(s) to push to Typefully...")
+        for row in to_push:
+            ok, message = push_response_row_to_typefully(notion, row)
+            print(message)
+            pushed += ok
+            failed += not ok
 
-        ok, message = post_response_calendar_row(notion, row, access_token)
-        print(message)
-        posted += ok
-        failed += not ok
+    if due:
+        print(f"{len(due)} row(s) due for direct posting...")
+        for i, row in enumerate(due):
+            try:
+                access_token = get_valid_access_token(client_id, client_secret)
+            except ConfigError as e:
+                print(f"Config error: {e}")
+                return 1
 
-        if i < len(due) - 1:
-            time.sleep(PAUSE_SECONDS_BETWEEN_POSTS)
+            ok, message = post_response_calendar_row(notion, row, access_token)
+            print(message)
+            posted += ok
+            failed += not ok
 
-    print(f"Done. Posted {posted}, failed {failed}.")
+            if i < len(due) - 1:
+                time.sleep(PAUSE_SECONDS_BETWEEN_POSTS)
+
+    print(f"Done. Pushed {pushed} to Typefully, posted {posted} directly, failed {failed}.")
     return 0
 
 

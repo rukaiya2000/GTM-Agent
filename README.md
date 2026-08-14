@@ -150,10 +150,21 @@ Turns rough notes into posts.
         └── approve → Stage = Ready to post
                       + set Scheduled Time
                              │
-                             ▼
-                    post_ready.py / post_all_due.py
-                    (only fires when Scheduled Time has passed)
-                             │
+              ┌──────────────┴──────────────┐
+              ▼                              ▼
+    single-thread/multi-thread          article
+    post_all_due.py pushes           post_all_due.py posts
+    to Typefully (draft id                directly via X API,
+    written back), Stage=Scheduled,       gated on Scheduled Time
+    Typefully fires at Scheduled Time           │
+              │                                  │
+              ▼                                  │
+    sync_typefully_status.py                     │
+    polls Stage=Scheduled rows,                  │
+    flips Stage=Posted                           │
+    once Typefully publishes                     │
+              │                                  │
+              └──────────────┬───────────────────┘
                              ▼
                     Stage = Posted ──────────────▶ voice_corpus.json
                                                           ▲
@@ -179,6 +190,8 @@ themselves; only the discovery path differs between the two tools.
 - Python 3.11 or later
 - An X developer account with pay-per-use billing and credits loaded
 - X Premium, if you intend to publish long-form Articles
+- A Typefully account with API access, if you intend to schedule single-thread/
+  multi-thread posts and replies (see [Scheduled publishing via Typefully](#scheduled-publishing-via-typefully)); Articles, retweets/quote-retweets, and DMs stay on the direct X API regardless
 - A Notion workspace, with an internal integration you can create
 - Claude Code or Codex CLI, for the skill-based steps
 - An OpenAI API key, if you intend to use the paper-outreach pipeline
@@ -199,7 +212,9 @@ Populate `.env` with the following:
 | Variable | Required for | How to obtain |
 |---|---|---|
 | `X_BEARER_TOKEN` | all read operations | X developer portal, app-only bearer token. Requires pay-per-use credits. |
-| `X_CLIENT_ID`, `X_CLIENT_SECRET` | publishing, X DMs | Same app, under User authentication settings. Read and write, confidential client, callback `http://127.0.0.1:8765/callback`. DM sending additionally needs the `dm.write` scope. |
+| `X_CLIENT_ID`, `X_CLIENT_SECRET` | publishing, X DMs | Same app, under User authentication settings. Read and write, confidential client, callback `http://127.0.0.1:8765/callback`. DM sending additionally needs the `dm.write` scope. Still required regardless of Typefully — it covers Articles, retweets/quote-retweets, and DMs. |
+| `TYPEFULLY_API_KEY` | scheduled single-thread/multi-thread posts and replies | typefully.com/settings/integrations |
+| `TYPEFULLY_SOCIAL_SET_ID` | same as above | `GET /v2/social-sets` with the API key above; see [Scheduled publishing via Typefully](#scheduled-publishing-via-typefully) |
 | `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET` | outreach email | Google Cloud OAuth client (Desktop app type), Gmail API enabled |
 | `NOTION_API_TOKEN` | all Notion access | notion.so/my-integrations, then share the target page with the integration |
 | `NOTION_TWEET_DRAFTS_DB_ID` | publishing | Written automatically by `setup.py` |
@@ -312,7 +327,8 @@ fast, not to replace it.
 | `New` | freshly staged by discovery, drafts filled in | the pipeline |
 | `Reviewed` | you looked at it, worth keeping around | you |
 | `Ready to post` | option chosen, ready to send | you (or the skill, on your ask) |
-| `Posted` | you actually replied on X | **you only** |
+| `Scheduled` | reply pushed to Typefully, awaiting its `Scheduled Time` | the pipeline (Typefully-eligible rows only) |
+| `Posted` | you actually replied on X | **you only** (or the pipeline, once Typefully confirms a `Scheduled` reply published) |
 | `Stale` / `Rejected (irrelevant)` / `Rejected (IDK what to say)` | exits | you |
 
 `Posted` doubles as the learning signal: it is positive evidence, the
@@ -345,21 +361,28 @@ never posts: it writes the three `Reply` fields and recommends one, sets
 `Posted` — that records what actually went out.
 
 Posting the staged queue is a separate, explicitly-invoked step —
-`publish-x-replies` / `gtm_agent/post_response_calendar.py` — not something
-that runs unattended off drafting. It posts rows whose `Scheduled Time` has
-passed: the selected reply, or a plain/quote retweet depending on `Selected`.
+`publish-x-replies`, a two-step trigger for `gtm_agent/post_response_calendar.py`
+and `gtm_agent/sync_typefully_status.py` — not something that runs unattended
+off drafting. `Selected` decides the path: `Reply 1/2/3`/`Self-Written Reply`
+rows push to Typefully as a reply (`reply_to_url` = the original tweet) as
+soon as they're `Ready to post`, flipping `Status = Scheduled` on a
+successful push, and Typefully fires at `Scheduled Time` from there;
+`Retweet` rows (plain or quote) are unaffected by Typefully and still
+post directly via the X API, gated locally on `Scheduled Time` having passed.
 There is deliberately no `Like` action — auto-like is the specific pattern
 `x-req.md` §2.5 calls out as the cause of account suspensions, and a like has
 no authored text to justify automating it, so it was cut from `Selected`
 entirely rather than wired up.
 
-On success the script appends the posted text to `voice_corpus.json` itself
-(`post_type: "reply"` or `"quote"`), so replies/quotes posted this way don't
-need a separate corpus-sync step. `gtm_agent/sync_replies.py` still exists as a
-backfill for anything posted outside this flow — e.g. by hand, directly on
-X — keyed by Notion page ID so it's safe to re-run on rows already marked
-`Posted` manually. Plain retweets carry no text either way, so nothing is
-harvested for those.
+On a direct retweet/quote-retweet, the script appends the posted text to
+`voice_corpus.json` itself (`post_type: "quote"`); on a Typefully-published
+reply, `sync_typefully_status.py` does the same (`post_type: "reply"`) once
+it confirms the draft actually published — so replies/quotes posted this way
+don't need a separate corpus-sync step. `gtm_agent/sync_replies.py` still
+exists as a backfill for anything posted outside this flow — e.g. by hand,
+directly on X — keyed by Notion page ID so it's safe to re-run on rows
+already marked `Posted` manually. Plain retweets carry no text either way,
+so nothing is harvested for those.
 
 ### API constraints
 
@@ -406,37 +429,83 @@ In Notion, choose one of the following:
 ### Publishing
 
 ```bash
-.venv/bin/python gtm_agent/post_ready.py      # one due row per run
-.venv/bin/python gtm_agent/post_all_due.py    # all due rows, oldest first
+.venv/bin/python gtm_agent/post_ready.py               # one due row per run (article only, see below)
+.venv/bin/python gtm_agent/post_all_due.py              # push single/multi-thread to Typefully + post due articles directly
+.venv/bin/python gtm_agent/sync_typefully_status.py     # reconcile previously-pushed Typefully drafts
 ```
 
 Alternatively, ask Claude to post your ready tweets; the `publish-x-queue` skill
-is a thin wrapper around `post_all_due.py`.
+is a two-step trigger for `post_all_due.py` then `sync_typefully_status.py`.
 
-Both scripts act only on rows where `Stage = Ready to post` and `Scheduled Time`
-lies in the past. Rows without a `Scheduled Time`, or with one still in the
-future, are never touched. Nothing is auto-scheduled or auto-spaced, so posting
-cadence remains entirely under your control.
+`post_type` decides the path. `single-thread`/`multi-thread` rows with no
+`Typefully Draft ID` yet are pushed to Typefully as soon as `Stage = Ready to
+post` — not gated on `Scheduled Time` locally, since Typefully takes the
+`Scheduled Time` as its own `publish_at` and owns firing at that moment from
+there. On a successful push, `Stage` is set to `Scheduled` (and stays there)
+until `sync_typefully_status.py` confirms the draft actually published and
+flips it to `Posted`. `article` rows are unaffected by Typefully (not a
+supported format there) and keep the original behavior exactly: acted on
+only once `Scheduled Time` has passed, posted directly via the X API,
+`Stage` going straight to `Posted`. Rows without a `Scheduled Time`, or with
+one still in the future, are never touched by either path.
 
-On success, `Stage` is set to `Posted` and the post is appended to
-`voice_corpus.json`. On failure, the error is written to `Post Error` and `Stage`
-is left unchanged so the row is retried on the next run.
+On a direct-post success (`article`), `Stage` is set to `Posted` and the post
+is appended to `voice_corpus.json`. On failure (either path), the error is
+written to `Post Error` and `Stage` is left unchanged so the row is retried
+on the next run.
 
-There is no cron integration by design. Run these scripts manually, and do so
-several times before considering any automation: each post costs money and cannot
-be undone.
+**Pushing to Typefully is still a manual, explicitly-invoked step** — there is
+no cron integration in this repo by design, and that hasn't changed. What has
+changed for eligible post types is what happens *after* the push: Typefully's
+own scheduler fires unattended at `Scheduled Time`, rather than you needing to
+re-run `post_all_due.py` at exactly that moment. Articles, retweets/quote-
+retweets, and DMs have no such handoff — they still post immediately, directly,
+the moment you run the script past their due time, and each one costs money and
+cannot be undone. Run everything manually, and do so several times before
+trusting it, same as always.
+
+#### Scheduled publishing via Typefully
+
+Typefully's v2 API is a compose-and-schedule tool for new content — it covers
+posts, threads, and replies (via `reply_to_url`), but has no generic "retweet
+this" or "send a DM" action. Concretely:
+
+| Source | Type | Path |
+|---|---|---|
+| Tweet Drafts | `single-thread` | Typefully |
+| Tweet Drafts | `multi-thread` | Typefully (thread = `posts` array) |
+| Tweet Drafts | `article` | Direct X API — not a Typefully format |
+| Response Calendar | reply (`Selected` = a `Reply`/`Self-Written Reply`) | Typefully |
+| Response Calendar | retweet/quote-retweet (`Selected` = `Retweet`) | Direct X API — no confirmed retweet endpoint on Typefully |
+| Paper Authors | X DM (`Send Via` = X) | Direct X API — Typefully has no DM support at all |
+
+So this is additive, not a replacement: your X OAuth app/token stays required
+regardless, for Articles, retweets, and DMs. To use Typefully, get an API key
+from typefully.com/settings/integrations, then find your social set id with:
+
+```bash
+curl -s "https://api.typefully.com/v2/social-sets" -H "Authorization: Bearer $TYPEFULLY_API_KEY"
+```
+
+Set both as `TYPEFULLY_API_KEY` and `TYPEFULLY_SOCIAL_SET_ID` in `.env`. The
+free Typefully tier includes API access with 1 social set, capped at 15
+posts/month — enough for light posting cadences; paid tiers remove the cap.
+Check your recent `Posted` row volume across Tweet Drafts + Response Calendar
+against that cap before committing to a paid tier.
 
 ### Partial failure cases
 
-Two failure modes leave real state on X and deliberately do not auto-retry, as a
-retry would compound the problem rather than resolve it. Both require manual
-intervention.
+One failure mode leaves real state on X and deliberately does not auto-retry,
+as a retry would compound the problem rather than resolve it, and requires
+manual intervention:
 
-- **A thread failing partway through.** Earlier posts in the thread are already
-  live. The error message records their IDs. Retrying would duplicate the
-  successfully posted prefix.
 - **An Article draft created but not published.** The draft exists on X. The error
   message records the draft ID. Retrying would create a second draft.
+
+Threads no longer have an equivalent partial-failure case in this pipeline —
+`multi-thread` rows are pushed to Typefully as a single draft (its `posts`
+array), and Typefully publishes the whole thread atomically on its end rather
+than this repo posting each reply-chained tweet itself.
 
 ## Pipeline 3: Paper outreach
 
@@ -464,9 +533,9 @@ not created for you. In Notion, create:
   `Post Error` (text, what went wrong on a failed/skipped send — cleared on a
   later successful send), `Status` (select: `Needs Handles`, `Draft Ready`,
   `Needs Review`, `Message Drafted`, `Sent`, `Followup 1 Sent`,
-  `Followup 2 Sent`, `Replied`), `First Sent` (date), `Last Sent` (date),
-  `Thread Ref` (text), `Followup 1 Message` (text), `Followup 2 Message`
-  (text)
+  `Followup 2 Sent`, `Replied`), `Scheduled Time` (date, optional — see
+  below), `First Sent` (date), `Last Sent` (date), `Thread Ref` (text),
+  `Followup 1 Message` (text), `Followup 2 Message` (text)
 
 The last five Paper Authors fields (`First Sent` through `Followup 2
 Message`) are only used by the follow-up cadence described below — skip them
@@ -541,8 +610,12 @@ that choice alone is what authorizes a send, nothing else is checked. Then:
 This sends to every author with a `Send Via` set — anyone still blank is
 left alone entirely. `Send Via` also decides what gets used: `Email` sends
 the Subject + Message together; `X`/`LinkedIn` send the Message only and the
-Subject is dropped. Anyone still missing a `Message` at this point gets one
-drafted first, same as run 2. Then it attempts to send:
+Subject is dropped. `Scheduled Time` is an optional additional gate: leave it
+blank to send immediately (unchanged default behavior), or set a future time
+to hold that author until a later run — this is a plain local due-time check,
+not a Typefully push, since Typefully has no DM support and these sends
+always go through the direct Gmail/X API. Anyone still missing a `Message` at
+this point gets one drafted first, same as run 2. Then it attempts to send:
 
 | Channel | Requires | Behaviour |
 |---|---|---|
@@ -707,11 +780,12 @@ notes` in that same turn.
 | `x_client.py` | X API: reads, posts, threads, Articles, metrics |
 | `x_oauth.py` | OAuth 2.0 PKCE login and token refresh |
 | `notion_client.py` | Notion API; owns `TWEET_DRAFTS_SCHEMA` |
+| `typefully_client.py` | Typefully v2 API: create/get a draft (single post, thread, or reply) |
 | `interests.py` | Parses `interests.md` |
 | `store.py` | SQLite seen-set and user ID cache |
 | `ranking.py` | Engagement scoring with optional recency decay |
 | `harvest.py` | Account fetch, deduplication, ranking |
-| `posting.py` | Thread and Article parsing, validation, `post_row()` |
+| `posting.py` | Thread and Article parsing/validation; `push_row_to_typefully()`/`push_response_row_to_typefully()` (Typefully-eligible types) and `post_row()`/`post_response_calendar_row()` (direct X API — Articles, retweets) |
 | `voice_corpus.py` | Corpus load, save, append, and metric attachment |
 | `gmail_oauth.py` | OAuth 2.0 PKCE login and token refresh for Gmail |
 | `gmail_client.py` | Gmail API: sending outreach email |
@@ -729,8 +803,9 @@ notes` in that same turn.
 | `discover_accounts.py` | Find accounts by topic; `--promote` adds approved ones to `interests.md` |
 | `check_mentions.py` | Stage replies and mentions into the Response Calendar |
 | `harvest_and_rank.py` | Legacy print-only, accounts-only variant |
-| `post_ready.py`, `post_all_due.py` | Publish due Tweet Drafts rows |
-| `post_response_calendar.py` | Publish due Response Calendar rows (replies/retweets) |
+| `post_ready.py`, `post_all_due.py` | Push single/multi-thread Tweet Drafts rows to Typefully; publish due `article` rows directly |
+| `post_response_calendar.py` | Push due reply rows to Typefully; publish due retweet/quote-retweet rows directly |
+| `sync_typefully_status.py` | Reconcile previously-pushed Typefully drafts — flips `Posted` once Typefully confirms publication |
 | `fetch_voice_corpus.py` | Seed or merge corpus entries from your timeline |
 | `fetch_metrics.py` | Attach post analytics to corpus entries |
 | `sync_replies.py` | Backfill hand-posted replies into the corpus |
@@ -747,14 +822,20 @@ notes` in that same turn.
 |---|---|
 | `polish-x-drafts` | Rough note to voice-matched draft |
 | `draft-x-replies` | Run discovery, prune using the `status` signal, then write three reply options in your voice for the shortlist |
-| `publish-x-queue` | Thin trigger for `post_all_due.py` |
-| `publish-x-replies` | Thin trigger for `post_response_calendar.py` |
+| `publish-x-queue` | Two-step trigger: `post_all_due.py` (push/post), then `sync_typefully_status.py` (reconcile) |
+| `publish-x-replies` | Two-step trigger: `post_response_calendar.py` (push/post), then `sync_typefully_status.py` (reconcile) |
 
 ## Project status
 
-**No component has yet been run against the live X or Notion APIs.** Every code
-path is verified offline against mocked calls. Live verification is blocked on
-credentials and X API credits.
+**Most of the pipeline has not yet been run against the live X or Notion APIs.**
+Every other code path is verified offline against mocked calls; live
+verification there is blocked on credentials and X API credits. The Typefully
+integration is the exception: `typefully_client.py`'s `create_draft()`/
+`get_draft()` and the live Notion schema migration (`Typefully Draft ID` on
+Tweet Drafts/Response Calendar, `Scheduled Time` on Paper Authors) have been
+exercised against the real Typefully and Notion APIs. The full push-then-
+reconcile flow through `post_all_due.py`/`post_response_calendar.py`/
+`sync_typefully_status.py` has not yet been run against a real queued row.
 
 Implemented and offline-verified:
 
@@ -763,9 +844,15 @@ Implemented and offline-verified:
 - Voice-matched drafting for all three post types, plus rejected-draft retry
   informed by Notion comments
 - Reply drafting sharing the publishing pipeline's voice corpus
-- Reply/retweet publishing for staged Response Calendar rows (`post_response_calendar.py`), gated on `Scheduled Time`, with `Like` deliberately unsupported
-- Publishing for all three post types, including reply-chained threads and the
-  Articles API, with both partial-failure paths handled
+- Reply publishing for staged Response Calendar rows via Typefully
+  (`post_response_calendar.py` + `sync_typefully_status.py`), owned by
+  Typefully's own scheduler past the push; retweet/quote-retweet publishing
+  stays on the direct X API, gated on `Scheduled Time`; `Like` deliberately
+  unsupported
+- Publishing for all three Tweet Drafts post types: `single-thread`/
+  `multi-thread` via Typefully (pushed, then reconciled once published),
+  `article` via the direct Articles API gated on `Scheduled Time`, with the
+  Article partial-failure path handled
 - Corpus seeding, automatic growth on publication, performance metric attachment,
   and sent-reply ingestion
 - Paper-outreach author resolution, handle discovery, and blurb/message
@@ -780,7 +867,7 @@ Known limitations:
 |---|---|
 | Topic search unverified | Recent-search may not be callable on pay-per-use billing (`x-req.md` open item 2). Degrades gracefully. |
 | No automatic polling | `polish-x-drafts` must be invoked; it does not watch for `Ready for AI Review` rows. |
-| No scheduler | Publishing is manual, gated on `Scheduled Time`. |
+| No scheduler for the direct-API paths | Articles, retweets/quote-retweets, and DMs still post immediately, the moment you manually run the relevant script past their `Scheduled Time`. `single-thread`/`multi-thread`/reply posts no longer have this limitation — Typefully fires those unattended once pushed. |
 | Weak `sync_posted.py` deduplication | Matches on exact text rather than tweet ID, since the `Posted URL` property was removed. Avoids re-importing on every run. |
 | Articles require X Premium | A sparse `articles` bucket also means weak long-form voice matching until several are published. |
 | Paper-outreach follow-ups are capped at two | Matches the requested cadence; nothing is sent after Follow-up 2 goes unanswered, and meeting scheduling/calendar sync from `Req/paper-outreach.md` remain unimplemented. |
@@ -798,9 +885,12 @@ Ordered approximately by impact on day-to-day use.
   watcher that picks up `Ready for AI Review` rows would make the publishing
   pipeline self-feeding: drop a rough note into Notion, return to a finished
   draft.
-- **Scheduling.** Publishing is manual. Cron and auto-spacing logic were
-  deliberately removed once already, so any reintroduction should be opt-in and
-  must preserve the one-post-per-run safety cap.
+- **Scheduling for the direct-API paths.** `single-thread`/`multi-thread`/reply
+  posts now schedule themselves via Typefully once pushed. Articles,
+  retweets/quote-retweets, and DMs still require a manually-timed script run.
+  Cron and auto-spacing logic were deliberately removed once already, so any
+  reintroduction there should be opt-in and must preserve the one-post-per-run
+  safety cap.
 - **Optimal posting times.** Once `fetch_metrics.py` has accumulated sufficient
   history, engagement rate by hour of day becomes answerable from your own data
   rather than from general advice. Blocked on data volume, not implementation.

@@ -20,6 +20,7 @@ TWEET_DRAFTS_SCHEMA = {
                 {"name": "Ready for AI Review", "color": "blue"},
                 {"name": "Ready for Human Review", "color": "brown"},
                 {"name": "Ready to post", "color": "purple"},
+                {"name": "Scheduled", "color": "blue"},
                 {"name": "Posted", "color": "green"},
                 {"name": "Rejected Agent Post", "color": "red"},
             ]
@@ -36,6 +37,7 @@ TWEET_DRAFTS_SCHEMA = {
     },
     "Scheduled Time": {"date": {}},
     "Post Error": {"rich_text": {}},
+    "Typefully Draft ID": {"rich_text": {}},
     "Date": {"created_time": {}},
 }
 
@@ -118,6 +120,7 @@ def _row_from_page(page: dict) -> dict:
         "stage": _select_name(props.get("Stage")),
         "scheduled_time": _date_start(props.get("Scheduled Time")),
         "post_type": _multi_select_first(props.get("post-type"), "single-thread"),
+        "typefully_draft_id": _plain_text(props.get("Typefully Draft ID")),
     }
 
 
@@ -196,6 +199,7 @@ class NotionClient:
                     "selected": _select_name(props.get("Selected")),
                     "retweet_message": _plain_text(props.get("Retweet Message")),
                     "scheduled_time": _date_start(props.get("Scheduled Time")),
+                    "typefully_draft_id": _plain_text(props.get("Typefully Draft ID")),
                     "replies": {
                         "Reply 1": _plain_text(props.get("Reply 1")),
                         "Reply 2": _plain_text(props.get("Reply 2")),
@@ -470,6 +474,7 @@ class NotionClient:
                     "message": _plain_text(props.get("Message")),
                     "post_error": _plain_text(props.get("Post Error")),
                     "status": _select_name(props.get("Status")),
+                    "scheduled_time": _date_start(props.get("Scheduled Time")),
                     "first_sent": _date_start(props.get("First Sent")),
                     "last_sent": _date_start(props.get("Last Sent")),
                     "thread_ref": _plain_text(props.get("Thread Ref")),
@@ -585,6 +590,17 @@ class NotionClient:
 
     def set_stage(self, page_id: str, stage: str) -> None:
         self.update_page(page_id, {"Stage": {"select": {"name": stage}}})
+
+    def set_response_status(self, page_id: str, status: str) -> None:
+        self.update_page(page_id, {"Status": {"select": {"name": status}}})
+
+    def set_typefully_draft_id(self, page_id: str, draft_id: str) -> None:
+        """Same property name/type on both Tweet Drafts and Response
+        Calendar, so one method covers both."""
+        self.update_page(
+            page_id,
+            {"Typefully Draft ID": {"rich_text": [{"text": {"content": draft_id}}]}},
+        )
 
     def mark_posted(self, page_id: str) -> None:
         self.update_page(

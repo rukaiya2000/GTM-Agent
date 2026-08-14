@@ -1,14 +1,14 @@
 ---
 name: publish-x-replies
-description: Post every "Ready to post" row in the Response Calendar Notion database whose Scheduled Time has passed — the chosen reply, or a plain/quote retweet. Use when the user asks to post their staged replies, send their engagement queue, or run the reply-posting worker.
+description: Push every "Ready to post" reply row in the Response Calendar Notion database to Typefully for scheduled publishing (marking it "Scheduled"), post any due retweet/quote-retweet directly, and reconcile previously-scheduled Typefully drafts. Use when the user asks to post their staged replies, send their engagement queue, or run the reply-posting worker.
 ---
 
 # Publish X Replies
 
 Posts real replies and retweets to X on the account's behalf — the actual
-posting logic stays in tested code (`gtm_agent/post_response_calendar.py`),
-not LLM-driven reasoning. This skill is the trigger: run the script, report
-back what it did.
+posting logic stays in tested code (`gtm_agent/post_response_calendar.py` +
+`gtm_agent/sync_typefully_status.py`), not LLM-driven reasoning. This skill
+is the trigger: run both scripts, report back what they did.
 
 This is deliberately separate from `draft-x-replies`, which never posts, and
 from `publish-x-queue`, which only knows the Tweet Drafts schema. A row only
@@ -25,29 +25,47 @@ at the already-decided time, nothing more.
    .venv/bin/python gtm_agent/post_response_calendar.py
    ```
 
-2. Report the script's output back to the user plainly — how many rows were
-   due, what got posted (with links), what failed and why. Don't editorialize
-   or repeat information the output already states clearly.
+2. Then run the reconciliation pass, which checks previously-pushed Typefully
+   drafts and flips them to `Posted` once Typefully has actually published them:
 
-## What the script does (for context, not to be reimplemented here)
+   ```bash
+   .venv/bin/python gtm_agent/sync_typefully_status.py
+   ```
 
-- Fetches all Response Calendar rows with `Status = Ready to post`.
-- Filters to ones whose `Scheduled Time` is already in the past — a row with
-  no `Scheduled Time`, or one still in the future, is left untouched.
-- Posts each due row, one at a time, oldest-scheduled first, with a short
-  pause between posts. `Selected` decides the action:
-  - `Reply 1/2/3` or `Self-Written Reply` → posts that text as a reply to the
-    original tweet.
-  - `Retweet` with `Retweet Message` filled in → quote-retweets with that
-    text.
-  - `Retweet` with `Retweet Message` empty → a plain retweet, no text.
-  - There is no `Like` action — it was cut deliberately (see Notes).
-- On success: sets `Status = Posted` and appends the reply/quote text to
-  `voice_corpus.json` (plain retweets carry no text, so nothing to learn
+3. Report both scripts' output back to the user plainly — what got pushed to
+   Typefully, what posted directly (with links), what resolved as published,
+   what failed and why. Don't editorialize or repeat information the output
+   already states clearly.
+
+## What the scripts do (for context, not to be reimplemented here)
+
+**`post_response_calendar.py`** — fetches all Response Calendar rows with
+`Status = Ready to post`. `Selected` decides the path:
+- `Reply 1/2/3` or `Self-Written Reply` with no `Typefully Draft ID` yet are
+  pushed to Typefully immediately as a reply (`reply_to_url` = the original
+  tweet), not gated on `Scheduled Time` locally — Typefully owns that gate
+  from here via its own `publish_at`. On a successful push, `Status` is set
+  to `Scheduled` and the returned draft id is written to `Typefully Draft ID`.
+- `Retweet` rows are unaffected by Typefully (no confirmed retweet-an-
+  arbitrary-tweet endpoint there) — still filtered to ones whose
+  `Scheduled Time` has passed, and posted directly: `Retweet Message` filled
+  in quote-retweets with that text; empty does a plain retweet, no text.
+  There is no `Like` action — it was cut deliberately (see Notes).
+- On direct-post success: sets `Status = Posted` and appends the quote text
+  to `voice_corpus.json` (plain retweets carry no text, so nothing to learn
   from — nothing is appended for those).
-- On failure: writes the error to `Post Error`, leaves `Status` alone (so
-  it's retried on the next invocation), and keeps going to the next due row
+- On failure (either path): writes the error to `Post Error`, leaves
+  `Status` alone (so it's retried on the next invocation), and keeps going
   rather than aborting the whole batch.
+
+**`sync_typefully_status.py`** — for every row with a `Typefully Draft ID`
+still at `Status = Scheduled`, checks its status via the Typefully API:
+- `published` → sets `Status = Posted` and appends the reply text to
+  `voice_corpus.json`.
+- `error` → writes the error to `Post Error`, leaves `Status` alone for
+  manual retry.
+- anything else (`draft`/`scheduled`/`planned`/`publishing`) → still
+  pending, no change; check again on a later run.
 
 Unlike `publish-x-queue`, there's no multi-step partial-failure case to worry
 about — each row is a single API call, so a failure never leaves a

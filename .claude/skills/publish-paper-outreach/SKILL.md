@@ -35,6 +35,14 @@ ask for confirmation per author. If nobody has `Send Via` set yet, tell the
 user to do that in Notion first (or run `paper-outreach` to draft messages
 first if nothing's drafted yet) rather than guessing who they mean.
 
+`Scheduled Time` is an optional additional gate on top of `Send Via`: empty
+sends immediately (unchanged default behavior), a future time holds that
+author until a later run — report anyone skipped for this reason separately
+from anyone skipped for a missing OAuth token or contact. This is a plain
+local due-time check, not a Typefully push — Typefully doesn't do DMs, so
+Paper Authors sends always go through the direct Gmail/X API regardless of
+`Scheduled Time`.
+
 `Send Via` decides what gets used, not just whether: `Email` sends the
 Subject + Message together; `X` or `LinkedIn` send the Message only and drop
 the Subject entirely. Anyone still missing a Message at this point gets one

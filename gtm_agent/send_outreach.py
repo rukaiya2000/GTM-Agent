@@ -36,7 +36,7 @@ for a reply and, if there isn't one, send up to two follow-ups.
 """
 
 import argparse
-from datetime import date
+from datetime import date, datetime, timezone
 
 from gtm_agent.config import (
     ConfigError,
@@ -55,6 +55,19 @@ from gtm_agent.x_client import XApiError, send_dm
 from gtm_agent.x_oauth import get_valid_access_token as get_valid_x_token
 
 READY_STATUSES = ("Needs Review", "Blurb Ready")
+
+
+def is_due(author: dict) -> bool:
+    """True if the author has no Scheduled Time (send now, same as before
+    this field existed) or it's already in the past. False for a future
+    Scheduled Time — skipped until a later run."""
+    scheduled_time = author.get("scheduled_time")
+    if not scheduled_time:
+        return True
+    dt = datetime.fromisoformat(scheduled_time.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt < datetime.now(timezone.utc)
 
 
 def get_x_access_token() -> str | None:
@@ -167,10 +180,19 @@ def send_for_paper(
         return
 
     # A human picking a Send Via channel is the sole authorization to reach
-    # out — nothing else (e.g. Selected) is checked.
-    to_send = [a for a in authors if a["send_via"]]
-    if not to_send:
+    # out — nothing else (e.g. Selected) is checked. Scheduled Time is an
+    # optional additional gate: unset sends now (unchanged default), a
+    # future time holds it until a later run.
+    with_send_via = [a for a in authors if a["send_via"]]
+    if not with_send_via:
         print("  No authors have a Send Via set in Notion — do that first, then re-run.")
+        return
+
+    to_send = [a for a in with_send_via if is_due(a)]
+    not_due = len(with_send_via) - len(to_send)
+    if not_due:
+        print(f"  {not_due} author(s) have a future Scheduled Time — not due yet.")
+    if not to_send:
         return
 
     draft_messages(notion, paper_row, [a for a in to_send if not a["message"]], tone_examples)
