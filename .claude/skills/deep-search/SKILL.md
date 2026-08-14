@@ -34,9 +34,11 @@ a single message so they run concurrently** — same pattern as
 2. **Funding/startup directories** — `WebSearch` targeted at funding
    announcements and startup-directory phrasing (e.g. `site:crunchbase.com`,
    "raises Series A", "seed round").
-3. **Company/professional directories** — `WebSearch` targeted at
-   `site:linkedin.com/company` and similar, for company existence,
-   location, and headcount signals.
+3. **Company/professional/code directories** — `WebSearch` targeted at
+   `site:linkedin.com/company` for company existence, location, and
+   headcount signals, and `site:github.com` for org/product repos —
+   useful signal for technical companies (activity, stars, what they've
+   actually shipped).
 
 Give each subagent: the exact query, its one source angle, and this exact
 instruction to reply with **only** a JSON array, capped at ~8–10 companies:
