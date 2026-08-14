@@ -132,8 +132,9 @@ def attempt_send(
             return False, "No LinkedIn Note drafted yet for this author.", None
         return (
             False,
-            "LinkedIn has no send API — copy the LinkedIn Note column into the "
-            "connection request's note field and send manually.",
+            "LinkedIn sends run through the LinkedIn automation tool, not this "
+            "script — run gtm_agent/export_linkedin_leads.py to get this "
+            "author's CSV + notes for the campaign.",
             None,
         )
     return False, f"Unknown channel {channel!r}.", None
@@ -216,8 +217,13 @@ def send_for_paper(
     # A human picking a Send Via channel is the sole authorization to reach
     # out — nothing else (e.g. Selected) is checked. Scheduled Time is an
     # optional additional gate: unset sends now (unchanged default), a
-    # future time holds it until a later run.
-    with_send_via = [a for a in authors if a["send_via"]]
+    # future time holds it until a later run. "Skip" is the explicit
+    # opt-out option and is left alone entirely — no draft, no send attempt.
+    skipped = [a for a in authors if a["send_via"] == "Skip"]
+    if skipped:
+        print(f"  {len(skipped)} author(s) marked Send Via = Skip — left alone.")
+
+    with_send_via = [a for a in authors if a["send_via"] and a["send_via"] != "Skip"]
     if not with_send_via:
         print("  No authors have a Send Via set in Notion — do that first, then re-run.")
         return

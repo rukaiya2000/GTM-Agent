@@ -1,6 +1,6 @@
 ---
 name: publish-paper-outreach
-description: Send real paper-outreach messages (Gmail/X DM) to every author with a Send Via set in Notion, draft a LinkedIn connection-request note for LinkedIn authors (never auto-sent — no safe API for that), and check for replies/send scheduled follow-ups on later runs. Use when the user explicitly asks to send/publish paper outreach, or to check outreach replies/follow-ups.
+description: Send real paper-outreach messages (Gmail/X DM) to every author with a Send Via set in Notion, export LinkedIn authors as CSV lead lists for the founder's LinkedIn automation tool (Linked Helper — sends never run through our code), and check for replies/send scheduled follow-ups on later runs. Use when the user explicitly asks to send/publish paper outreach, or to check outreach replies/follow-ups.
 ---
 
 # Publish Paper Outreach
@@ -57,14 +57,25 @@ whether it sent or only drafted (and why, if it only drafted), and the
 content for anything that needs manual copy-paste — `Message` (with
 `Subject`, for Email) for Email/X, or `LinkedIn Note` for LinkedIn.
 
-`Send Via = LinkedIn` never actually sends anything — there's no official
-LinkedIn API for sending a connection request, and the unofficial ones
-require your raw LinkedIn password and risk the account getting restricted,
-so this is a hard boundary, not a gap to fill in later. Instead, a
-`LinkedIn Note` (rich text, ≤200 characters — LinkedIn's own cap on
-connection-request notes) is drafted separately from `Message`, and printed
-for you to paste into the connection request by hand. `Status` stays
-`Message Drafted`, never `Sent`, for these rows.
+`Send Via = LinkedIn` never sends from our code — there's no official
+LinkedIn API, and this repo never drives LinkedIn directly (no passwords,
+no LinkedIn endpoints; that boundary stands). Instead, LinkedIn sends run
+through the founder's LinkedIn automation tool (**Linked Helper** as of
+2026-08-14, trialing; the founder keeps invites ≤80/month by choice): a
+`LinkedIn Note` (≤200 characters, LinkedIn's cap on connection-request
+notes) is drafted separately from `Message`, and
+
+```bash
+.venv/bin/python gtm_agent/export_linkedin_leads.py    # add --paper <substring> to filter
+```
+
+writes one CSV per paper (profile URL + full name) into `exports/linkedin/`
+and prints the note + follow-up drafts to paste into that paper's campaign
+sequence in the tool. The human uploads the CSV, launches the campaign
+(the tool then owns invite pacing, follow-up chaining, and stop-on-reply),
+and flips each author's `Status` to `Sent` in Notion — the tool doesn't
+report back to Notion, so that flip is manual and is the only record a
+LinkedIn send happened.
 
 ## Checking replies / sending follow-ups
 
@@ -80,6 +91,12 @@ message after Follow-up 2. Report who replied, who got a follow-up, and who's
 still waiting on timing. Run this by default when the user just says "check
 outreach" with no other signal.
 
+LinkedIn rows are deliberately excluded from this script: their follow-up
+timing lives inside the LinkedIn tool's campaign sequence (set up at export
+time with the `Followup 1/2 Message` drafts), so drafting or nudging here
+too would send people duplicate touches. LinkedIn replies are the user's to
+check in the tool/LinkedIn, flipping `Status` to `Replied` by hand.
+
 ## Update memory (automatic, every run)
 
 After reporting, run the procedure in `.claude/memory-update-procedure.md`
@@ -93,7 +110,9 @@ needed, and it's a silent no-op when nothing new happened.
   `OPENAI_API_KEY`, etc.) or says an OAuth token needs
   `gmail_oauth_login.py`/`x_oauth_login.py` re-run, surface that directly —
   don't try to work around it.
-- LinkedIn has no send or read API at all — those rows always draft-only,
-  and follow-ups leaves them alone; replies there are the user's to check.
+- LinkedIn has no send or read API at all — sends go through the founder's
+  LinkedIn automation tool (export_linkedin_leads.py), never through this
+  repo's code, and follow-ups leaves those rows alone; replies there are
+  the user's to check.
 - A hand-written `Message`/`Subject` in Notion is always used as-is and
   never overwritten.

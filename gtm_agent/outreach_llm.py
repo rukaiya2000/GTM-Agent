@@ -118,6 +118,8 @@ def outreach_message(
 FOLLOWUP_CHANNEL_GUIDANCE = {
     "Email": "A short follow-up email replying in the same thread. No subject line, body only. Under 60 words.",
     "X": "A short follow-up direct message on X. Under 200 characters.",
+    "LinkedIn": "A short LinkedIn connection-request follow-up note. Hard limit of 200 characters total "
+    "(LinkedIn's own cap) — this is not negotiable, stay under it. No subject line, no signature.",
 }
 
 

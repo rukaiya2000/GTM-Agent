@@ -479,6 +479,8 @@ class NotionClient:
                     "first_sent": _date_start(props.get("First Sent")),
                     "last_sent": _date_start(props.get("Last Sent")),
                     "thread_ref": _plain_text(props.get("Thread Ref")),
+                    "followup_1_message": _plain_text(props.get("Followup 1 Message")),
+                    "followup_2_message": _plain_text(props.get("Followup 2 Message")),
                 }
             )
         return rows
@@ -575,6 +577,16 @@ class NotionClient:
                 "Status": {"select": {"name": status}},
                 "Last Sent": {"date": {"start": sent_date}},
             },
+        )
+
+    def set_followup_draft(self, page_id: str, followup_number: int, message: str) -> None:
+        """LinkedIn-only: there's no send API to confirm delivery, so this
+        writes just the drafted text for the human to copy-paste by hand —
+        never touches Status or Last Sent, which stay the human's to advance
+        once they've actually sent it (same trust model as the initial
+        LinkedIn Note)."""
+        self.update_page(
+            page_id, {f"Followup {followup_number} Message": {"rich_text": [{"text": {"content": message[:2000]}}]}}
         )
 
     def set_author_status(self, page_id: str, status: str) -> None:

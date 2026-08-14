@@ -9,3 +9,4 @@ x_oauth_token.json
 gmail_oauth_token.json
 voice_corpus.json
 memory/
+exports/

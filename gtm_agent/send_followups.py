@@ -23,9 +23,14 @@ Email replies are checked by looking at the Gmail thread (requires the
 gmail.readonly scope — re-run gmail_oauth_login.py if your saved token
 predates it) and sent as a reply in that same thread. X replies are checked
 via the DM conversation (requires the dm.read scope — re-run
-x_oauth_login.py if your saved token predates it). LinkedIn has neither a
-send nor a read API, so those rows are left alone; check replies there
-yourself.
+x_oauth_login.py if your saved token predates it).
+
+LinkedIn rows are not this script's job: LinkedIn outreach runs through a
+third-party automation tool (see gtm_agent/export_linkedin_leads.py), whose
+campaign sequence owns the invite and follow-up timing itself — drafting
+follow-ups here too would send people duplicates. Replies on LinkedIn are
+still yours to check, and Status is still yours to flip (the tool doesn't
+report back to Notion).
 
     python gtm_agent/send_followups.py
     python gtm_agent/send_followups.py --dry-run    # preview without sending or updating Notion
@@ -59,7 +64,11 @@ from gtm_agent.x_client import (
 from gtm_agent.x_oauth import get_valid_access_token as get_valid_x_token
 
 ACTIONABLE_STATUSES = ("Sent", "Followup 1 Sent", "Followup 2 Sent")
-AUTOMATABLE_CHANNELS = ("Email", "X")
+# Email/X follow-ups send and reply-check automatically via their APIs.
+# LinkedIn is deliberately absent: the LinkedIn tool's campaign sequence
+# handles follow-up timing itself (export_linkedin_leads.py), so drafting
+# or nudging here would produce duplicate touches.
+FOLLOWUP_CHANNELS = ("Email", "X")
 NEXT_FOLLOWUP = {"Sent": 1, "Followup 1 Sent": 2}
 FOLLOWUP_STATUS = {1: "Followup 1 Sent", 2: "Followup 2 Sent"}
 
@@ -145,7 +154,14 @@ def process_author(
         return
 
     if not author["last_sent"]:
-        print("  no Last Sent on file (sent before follow-ups existed) — skipping")
+        # Either a row sent before First/Last Sent existed, or a LinkedIn row
+        # the human just marked Sent by hand — in both cases the actual send
+        # date isn't known, so record today as the closest available anchor
+        # rather than skipping this author's follow-ups forever.
+        today = date.today().isoformat()
+        print(f"  no Last Sent on file — recording today ({today}) as the send date; follow-up timing starts from here")
+        if not dry_run:
+            notion.record_initial_send(author["id"], author.get("thread_ref"), today)
         return
 
     elapsed = days_since(author["last_sent"])
@@ -191,7 +207,7 @@ def main() -> int:
         print(f"Notion request failed: {e}")
         return 1
 
-    candidates = [a for a in authors if a["status"] in ACTIONABLE_STATUSES and a["send_via"] in AUTOMATABLE_CHANNELS]
+    candidates = [a for a in authors if a["status"] in ACTIONABLE_STATUSES and a["send_via"] in FOLLOWUP_CHANNELS]
     if not candidates:
         print("No sent outreach awaiting a reply check or follow-up.")
         return 0
