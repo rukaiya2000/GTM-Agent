@@ -8,16 +8,13 @@ Read-only against X. Nothing is replied to automatically.
 """
 
 import argparse
-import sys
 
 from gtm_agent.config import ConfigError, get_response_calendar_db_id
+from gtm_agent.discover import tweet_id_from_url
 from gtm_agent.harvest import resolve_user_id
 from gtm_agent.notion_client import NotionApiError, NotionClient
 from gtm_agent.store import Store
 from gtm_agent.x_client import XApiError, XClient, full_text
-
-sys.path.insert(0, "scripts")
-from discover import tweet_id_from_url  # noqa: E402  shared dedupe helper
 
 
 def main() -> int:
