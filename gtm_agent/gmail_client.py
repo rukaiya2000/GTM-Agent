@@ -1,5 +1,8 @@
 import base64
+import email.charset
+import html
 import re
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 import requests
@@ -28,6 +31,25 @@ def split_subject_and_body(message: str) -> tuple[str, str]:
     return "Following up on your paper", message
 
 
+# Gmail's own compose sends multipart/alternative (plain + HTML), UTF-8,
+# quoted-printable. Mirroring that matters for deliverability: a bare
+# text/plain MIMEText is a scripted-mail fingerprint that spam filters
+# penalize — an identical message sent from the Gmail UI landed in the
+# inbox while the bare-MIMEText version went to spam.
+_QP_UTF8 = email.charset.Charset("utf-8")
+_QP_UTF8.body_encoding = email.charset.QP
+
+
+def _build_mime(to: str, subject: str, body: str) -> MIMEMultipart:
+    mime = MIMEMultipart("alternative")
+    mime["To"] = to
+    mime["Subject"] = subject
+    mime.attach(MIMEText(body, "plain", _charset=_QP_UTF8))
+    html_body = html.escape(body).replace("\r\n", "\n").replace("\n", "<br>\n")
+    mime.attach(MIMEText(f'<div dir="ltr">{html_body}</div>', "html", _charset=_QP_UTF8))
+    return mime
+
+
 def send_email(
     to: str, message: str, access_token: str, thread_id: str | None = None, subject_override: str | None = None
 ) -> dict:
@@ -41,9 +63,7 @@ def send_email(
         subject, body = subject_override, message
     else:
         subject, body = split_subject_and_body(message)
-    mime = MIMEText(body)
-    mime["to"] = to
-    mime["subject"] = subject
+    mime = _build_mime(to, subject, body)
     raw = base64.urlsafe_b64encode(mime.as_bytes()).decode()
 
     body_json: dict = {"raw": raw}

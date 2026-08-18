@@ -140,6 +140,14 @@ def attempt_send(
     return False, f"Unknown channel {channel!r}.", None
 
 
+def salutation(name: str) -> str:
+    """Per-author opening line, prepended to the shared draft body. Also
+    makes each recipient's email body unique, which matters for spam
+    filtering — identical bodies to many recipients is a bulk-mail signal."""
+    first = name.strip().split()[0] if name.strip() else ""
+    return f"Hi {first}, how are you?" if first else "Hi, how are you?"
+
+
 def draft_messages(
     notion: NotionClient,
     paper_row: dict,
@@ -169,10 +177,11 @@ def draft_messages(
 
     subject, body = split_subject_and_body(draft)
     for a in to_draft:
-        notion.set_author_message(a["id"], body, status="Message Drafted", subject=subject)
-        a["message"] = body  # so a later step sees it without a re-fetch
+        personal_body = f"{salutation(a['name'])}\n\n{body}"
+        notion.set_author_message(a["id"], personal_body, status="Message Drafted", subject=subject)
+        a["message"] = personal_body  # so a later step sees it without a re-fetch
         a["subject"] = subject
-        print(f"  {a['name']}: drafted\n    Subject: {subject}\n    {body}\n")
+        print(f"  {a['name']}: drafted\n    Subject: {subject}\n    {personal_body}\n")
 
     # LinkedIn's connection note is a separate, much shorter format than the
     # email draft above (200-char hard cap, LinkedIn's own limit on connection
