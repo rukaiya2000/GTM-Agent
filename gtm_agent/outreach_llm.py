@@ -52,7 +52,11 @@ def _chat(system: str, user: str, max_tokens: int, purpose: str = "") -> str:
         )
         response.raise_for_status()
         payload = response.json()
-        text = payload["choices"][0]["message"]["content"].strip()
+        choice = payload["choices"][0]["message"]
+        text = (choice["content"] or "").strip()
+        # Reasoning models return their chain separately from the answer, under
+        # a field name that differs by provider. Absent on ordinary models.
+        reasoning = choice.get("reasoning") or choice.get("reasoning_content")
     except requests.RequestException as exc:
         trajectory.log_llm(DEFAULT_MODEL, system, user, purpose=purpose, error=f"{type(exc).__name__}: {exc}",
                            latency_s=round(time.monotonic() - started, 3))
@@ -62,7 +66,7 @@ def _chat(system: str, user: str, max_tokens: int, purpose: str = "") -> str:
                            latency_s=round(time.monotonic() - started, 3))
         raise OutreachLLMError("The writing model returned an unexpected response.") from exc
     trajectory.log_llm(
-        DEFAULT_MODEL, system, user, response=text, purpose=purpose,
+        DEFAULT_MODEL, system, user, response=text, reasoning=reasoning, purpose=purpose,
         usage=payload.get("usage"), latency_s=round(time.monotonic() - started, 3),
         finish_reason=(payload.get("choices") or [{}])[0].get("finish_reason"),
     )

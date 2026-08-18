@@ -57,10 +57,62 @@ SCRIPT_SKILL = {
 }
 
 
-def _skill(script: str, argv: list[str]) -> tuple[str | None, str]:
+TRANSCRIPT_TAIL_BYTES = 256_000
+PROMPT_MAX_CHARS = 4_000
+
+
+def _transcript_path() -> Path | None:
+    """The live Claude Code session transcript, found by session id rather
+    than by rebuilding its directory slug from cwd."""
+    session = os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if not session:
+        return None
+    matches = list((Path.home() / ".claude" / "projects").glob(f"*/{session}.jsonl"))
+    return matches[0] if matches else None
+
+
+def _session_context() -> dict:
+    """What the human last asked, and the skill Claude Code attributes the
+    work to. Read from the tail of the transcript — these runs are launched
+    mid-session, so the newest records are the relevant ones, and some
+    transcripts are tens of megabytes.
+
+    Entirely best-effort: outside Claude Code there is no transcript, and the
+    format is the harness's, not ours. Nothing here may raise.
+    """
+    context: dict = {}
+    try:
+        path = _transcript_path()
+        if path is None:
+            return context
+        with path.open("rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            fh.seek(max(0, fh.tell() - TRANSCRIPT_TAIL_BYTES))
+            lines = fh.read().decode("utf-8", "replace").split("\n")[1:]  # drop the partial first line
+        for line in reversed(lines):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if "prompt" not in context and row.get("type") == "last-prompt" and row.get("lastPrompt"):
+                context["prompt"] = row["lastPrompt"][:PROMPT_MAX_CHARS]
+            if "skill" not in context and row.get("attributionSkill"):
+                context["skill"] = row["attributionSkill"]
+            if len(context) == 2:
+                break
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return {}
+    return context
+
+
+def _skill(script: str, argv: list[str], from_session: str | None = None) -> tuple[str | None, str]:
     from_env = os.environ.get("GTM_SKILL")
     if from_env:
         return from_env, "env"
+    if from_session:
+        return from_session, "transcript"
     if script == "send_outreach":
         # The one script two skills share, told apart by the flag paper-outreach
         # always passes and publish-paper-outreach never does.
@@ -104,6 +156,7 @@ class Run:
         started = datetime.now(timezone.utc)
         self.script = script
         self.skill: str | None = None
+        self.prompt: str | None = None
         self.run_id = f"{started.strftime('%Y%m%d-%H%M%S')}-{script}-{uuid.uuid4().hex[:4]}"
         self.started_at = started
         self.path = RUNS_DIR / started.strftime("%Y-%m-%d") / f"{self.run_id}.jsonl"
@@ -143,6 +196,7 @@ class Run:
             "run_id": self.run_id,
             "script": self.script,
             "skill": self.skill,
+            "prompt": self.prompt,
             "started_at": self.started_at.isoformat(timespec="seconds"),
             "status": status,
             "exit_code": exit_code,
@@ -150,7 +204,7 @@ class Run:
             "counts": dict(self.counts),
             "path": str(self.path),
         }
-        self.write("run_end", **{k: v for k, v in summary.items() if k not in {"run_id", "script", "skill"}})
+        self.write("run_end", **{k: v for k, v in summary.items() if k not in {"run_id", "script", "skill", "prompt"}})
         if self._file is not None:
             try:
                 self._file.close()
@@ -213,8 +267,11 @@ def run_main(main, script_file: str) -> int:
     run = Run(script)
     _current = run
     sha, dirty = _git_state()
-    skill, skill_source = _skill(script, sys.argv[1:])
+    session = _session_context()
+    prompt = os.environ.get("GTM_PROMPT") or session.get("prompt")
+    skill, skill_source = _skill(script, sys.argv[1:], session.get("skill"))
     run.skill = skill
+    run.prompt = prompt
     run.write(
         "run_start",
         run_id=run.run_id,
@@ -222,6 +279,8 @@ def run_main(main, script_file: str) -> int:
         argv=sys.argv[1:],
         skill=skill,
         skill_source=skill_source,
+        prompt=prompt,
+        prompt_source=("env" if os.environ.get("GTM_PROMPT") else "transcript") if prompt else None,
         git_sha=sha,
         git_dirty=dirty,
         python=sys.version.split()[0],
@@ -273,6 +332,7 @@ def log_llm(
     system: str,
     user: str,
     response: str | None = None,
+    reasoning: str | None = None,
     usage: dict | None = None,
     latency_s: float | None = None,
     error: str | None = None,
@@ -286,6 +346,7 @@ def log_llm(
         system=system,
         user=user,
         response=response,
+        reasoning=reasoning,
         usage=usage or {},
         latency_s=latency_s,
         error=error,

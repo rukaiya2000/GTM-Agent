@@ -82,10 +82,10 @@ work; skills add judgement on top (voice matching, curation, drafting).
 
 ## Run trajectories
 
-Every script run records what it did to `runs/` — args, the code it ran on,
-everything it printed, every LLM prompt and completion with token usage,
-per-recipient send outcomes, and the traceback if it died. Read them back
-with:
+Every script run records what it did to `runs/` — the prompt that asked for
+it, args, the code it ran on, everything it printed, every LLM prompt and
+completion with token usage, per-recipient send outcomes, and the traceback
+if it died. Read them back with:
 
 ```bash
 .venv/bin/python gtm_agent/runs.py                     # recent runs

@@ -20,9 +20,9 @@ Inside a run file, one JSON object per line, in the order things happened:
 
 | `kind` | What it holds |
 |---|---|
-| `run_start` | script, argv, the skill it belongs to, git sha + whether the tree was dirty, Python version, pid |
+| `run_start` | script, argv, **the prompt that asked for it**, the skill it belongs to, git sha + whether the tree was dirty, Python version, pid |
 | `stdout` / `stderr` | every line the script printed, teed as it ran |
-| `llm` | model, full system and user prompt, the completion, token usage, latency, finish reason — or the error instead |
+| `llm` | model, full system and user prompt, the completion, **reasoning if the model emits any**, token usage, latency, finish reason — or the error instead |
 | `outreach_send` / `outreach_skip` | per-author: channel, recipient, whether it sent, the reason it didn't, the message body |
 | `followup_outcome` | per-author: replied, not due (with the day count), sent, send failed, drafting failed |
 | `paper_staged` | how many authors were staged, skipped, held by `Scheduled Time`, and due |
@@ -46,8 +46,9 @@ alongside, flushed line by line so a crashed run still leaves one behind.
 .venv/bin/python gtm_agent/runs.py summary                # per-script health, per-item outcomes, spend
 ```
 
-`--script send_outreach` and `--skill publish-paper-outreach` narrow any of
-them; `--limit 0` stops truncating to the last 20 runs.
+`--script send_outreach`, `--skill publish-paper-outreach` and `--asked
+"follow-up"` narrow any of them; `--limit 0` stops truncating to the last 20
+runs.
 
 `show` is the one to pipe into a model when a run went wrong in a way that
 needs judgement rather than a grep — it prints the whole trajectory,
@@ -66,13 +67,29 @@ The two questions worth asking of a stack of runs:
   is the unit of evaluation — a draft judged without its prompt tells you
   nothing about what to change.
 
-Each run is attributed to the skill that drives it. That attribution is
+## Where the prompt comes from
+
+A run records what the human asked for, so a trajectory can be read without
+remembering the conversation around it. It is lifted from the live Claude
+Code session transcript — found by `CLAUDE_CODE_SESSION_ID`, read from the
+tail so a multi-megabyte transcript costs nothing — and is the most recent
+typed prompt at the moment the script started. `GTM_PROMPT` overrides it,
+and outside Claude Code there is simply no prompt on the record.
+
+Claude's own reasoning is *not* captured, because it isn't there to capture:
+the harness writes thinking blocks to the transcript with their text
+stripped. The `reasoning` field on an `llm` event is the drafting model's
+own chain, which arrives only from reasoning models — `gpt-4o-mini` sends
+none, so the field stays empty until `OPENAI_MODEL` changes.
+
+Each run is attributed to the skill that drives it. Where the transcript
+names one, that is used (`skill_source: transcript`); otherwise it is
 inferred from the script name (see `SCRIPT_SKILL` in
-`gtm_agent/trajectory.py`) and recorded as `skill_source: inferred`;
-exporting `GTM_SKILL` before a run overrides it and is recorded as `env`.
+`gtm_agent/trajectory.py`) and recorded as `inferred`. `GTM_SKILL` beats
+both and is recorded as `env`.
 
 ## Contents
 
-Trajectories hold real recipient addresses, real message bodies and full
-prompts — that is the point, since redacted ones can't be analysed. They
+Trajectories hold real recipient addresses, real message bodies, full
+prompts and whatever you typed to ask for the run — that is the point, since redacted ones can't be analysed. They
 stay local: `runs/` is gitignored, and nothing uploads them.

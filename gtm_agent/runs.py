@@ -75,6 +75,8 @@ def select(runs: list[dict], args) -> list[dict]:
         runs = [r for r in runs if r["script"] == args.script]
     if args.skill:
         runs = [r for r in runs if r.get("skill") == args.skill]
+    if args.asked:
+        runs = [r for r in runs if args.asked.lower() in (r.get("prompt") or "").lower()]
     if getattr(args, "failed", False):
         runs = [r for r in runs if r["status"] != "ok"]
     return runs[-args.limit:] if args.limit else runs
@@ -92,6 +94,8 @@ def cmd_list(runs: list[dict], args) -> int:
             f"{run['started_at']}  {run['run_id']:<44} {STATUS_MARK.get(run['status'], run['status']):<11}"
             f" {run['duration_s']:>7.1f}s  {run.get('skill') or '-':<26}{extra}"
         )
+        if run.get("prompt"):
+            print(f"{'':>21}\u21b3 {run['prompt'].splitlines()[0][:96]}")
     print(f"\n{len(chosen)} run(s). `runs.py show <run-id>` to replay one.")
     return 0
 
@@ -130,7 +134,11 @@ def cmd_show(runs: list[dict], args) -> int:
             print(f"  args: {argv}")
             print(f"  code: {event.get('git_sha')}{dirty}   python {event.get('python')}")
             if event.get("skill"):
-                print(f"  skill: {event['skill']}")
+                print(f"  skill: {event['skill']} ({event.get('skill_source')})")
+            if event.get("prompt"):
+                print(f"\n  asked ({event.get('prompt_source')}):")
+                for line in event["prompt"].splitlines():
+                    print(f"    {line}")
             print()
         elif kind in {"stdout", "stderr"}:
             prefix = "  " if kind == "stdout" else "! "
@@ -143,6 +151,8 @@ def cmd_show(runs: list[dict], args) -> int:
             if args.prompts:
                 print(f"    system: {event['system']}")
                 print(f"    user:   {event['user']}")
+            if event.get("reasoning"):
+                print(f"    reasoning: {event['reasoning']}")
             if event.get("response"):
                 print(f"    -> {event['response']}")
             print()
@@ -167,17 +177,21 @@ def cmd_llm(runs: list[dict], args) -> int:
         usage = call.get("usage") or {}
         total["prompt"] += usage.get("prompt_tokens", 0)
         total["completion"] += usage.get("completion_tokens", 0)
+        total["reasoning"] += (usage.get("completion_tokens_details") or {}).get("reasoning_tokens", 0)
         total["calls"] += 1
         state = call.get("error") or f"{usage.get('total_tokens', '?')} tok"
         print(f"\n{run['run_id']}  {call.get('purpose')}  [{state}]")
         if args.full:
             print(f"  system: {call['system']}")
             print(f"  user:   {call['user']}")
+        if call.get("reasoning"):
+            print(f"  reasoning: {call['reasoning']}")
         if call.get("response"):
             print(f"  -> {call['response']}")
+    reasoning = f" (of which {total['reasoning']} reasoning)" if total["reasoning"] else ""
     print(
-        f"\n{total['calls']} call(s): {total['prompt']} prompt + {total['completion']} completion "
-        f"= {total['prompt'] + total['completion']} tokens"
+        f"\n{total['calls']} call(s): {total['prompt']} prompt + {total['completion']} completion"
+        f"{reasoning} = {total['prompt'] + total['completion']} tokens"
     )
     return 0
 
@@ -222,6 +236,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--script", help="Only runs of this script, e.g. send_outreach")
     parser.add_argument("--skill", help="Only runs driven by this skill, e.g. publish-paper-outreach")
+    parser.add_argument("--asked", help="Only runs whose prompt contains this text (case-insensitive)")
     parser.add_argument("--limit", type=int, default=20, help="Most recent N runs (0 for all)")
     sub = parser.add_subparsers(dest="command")
 
