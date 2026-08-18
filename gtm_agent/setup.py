@@ -14,6 +14,7 @@ from gtm_agent.config import ConfigError, get_bearer_token, get_notion_token
 from gtm_agent.harvest import resolve_user_id
 from gtm_agent.notion_client import NotionApiError, NotionClient
 from gtm_agent.store import Store
+from gtm_agent.trajectory import run_main
 from gtm_agent.voice_corpus import CORPUS_PATH, append_article, append_tweet
 from gtm_agent.x_client import XApiError, XClient, full_text, is_long_post
 
@@ -185,4 +186,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(run_main(main, __file__))

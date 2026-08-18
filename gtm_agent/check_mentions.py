@@ -14,6 +14,7 @@ from gtm_agent.discover import tweet_id_from_url
 from gtm_agent.harvest import resolve_user_id
 from gtm_agent.notion_client import NotionApiError, NotionClient
 from gtm_agent.store import Store
+from gtm_agent.trajectory import run_main
 from gtm_agent.x_client import XApiError, XClient, full_text
 
 
@@ -101,4 +102,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run_main(main, __file__))

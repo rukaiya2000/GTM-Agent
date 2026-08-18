@@ -13,6 +13,7 @@ from gtm_agent.posting import (
     post_response_calendar_row,
     push_response_row_to_typefully,
 )
+from gtm_agent.trajectory import run_main
 from gtm_agent.x_oauth import get_valid_access_token
 
 STATUS = "Ready to post"
@@ -102,4 +103,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run_main(main, __file__))

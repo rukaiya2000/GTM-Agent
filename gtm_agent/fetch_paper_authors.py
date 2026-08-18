@@ -34,6 +34,7 @@ from gtm_agent import handle_search, paper_pdf, scholar
 from gtm_agent.config import ConfigError, get_paper_authors_db_id, get_paper_outreach_db_id
 from gtm_agent.notion_client import NotionApiError, NotionClient
 from gtm_agent.outreach_llm import OutreachLLMError, paper_blurb
+from gtm_agent.trajectory import run_main
 from gtm_agent.x_client import XClient
 
 SOCIAL_PATTERN = re.compile(r"(?:https?://)?(?:www\.)?(x|twitter)\.com/([A-Za-z0-9_]+)", re.IGNORECASE)
@@ -242,4 +243,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run_main(main, __file__))

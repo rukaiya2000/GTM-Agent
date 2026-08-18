@@ -14,6 +14,7 @@ backfill for anything posted outside `gtm_agent/post_response_calendar.py`
 
 from gtm_agent.config import ConfigError, get_response_calendar_db_id
 from gtm_agent.notion_client import NotionApiError, NotionClient
+from gtm_agent.trajectory import run_main
 from gtm_agent.voice_corpus import CORPUS_PATH, append_tweet
 
 # Replies are posted by hand, so there's no tweet id to key on. The Notion page
@@ -76,4 +77,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run_main(main, __file__))

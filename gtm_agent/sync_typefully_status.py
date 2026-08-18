@@ -4,6 +4,7 @@ from gtm_agent.config import (
     get_tweet_drafts_db_id,
 )
 from gtm_agent.notion_client import NotionApiError, NotionClient
+from gtm_agent.trajectory import run_main
 from gtm_agent.typefully_client import TypefullyApiError, get_draft
 from gtm_agent.voice_corpus import append_tweet
 from gtm_agent.x_client import tweet_id_from_url
@@ -103,4 +104,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run_main(main, __file__))

@@ -3,6 +3,7 @@ import sys
 from gtm_agent.config import ConfigError
 from gtm_agent.harvest import resolve_user_id
 from gtm_agent.store import Store
+from gtm_agent.trajectory import run_main
 from gtm_agent.voice_corpus import append_tweet
 from gtm_agent.x_client import XApiError, XClient
 
@@ -50,4 +51,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run_main(main, __file__))

@@ -8,9 +8,11 @@ LLM invents confidently, and a wrong affiliation in a cold email is fatal.
 
 import json
 import os
+import time
 
 import requests
 
+from gtm_agent import trajectory
 from gtm_agent.config import ConfigError, get_openai_api_key
 
 OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
@@ -29,11 +31,13 @@ class OutreachLLMError(RuntimeError):
     """Writing help was unavailable. Callers must keep the fetched facts usable."""
 
 
-def _chat(system: str, user: str, max_tokens: int) -> str:
+def _chat(system: str, user: str, max_tokens: int, purpose: str = "") -> str:
     try:
         api_key = get_openai_api_key()
     except ConfigError as exc:
+        trajectory.log_llm(DEFAULT_MODEL, system, user, purpose=purpose, error="OPENAI_API_KEY not set")
         raise OutreachLLMError("OPENAI_API_KEY is not set, so drafting is off. The scholarly facts above still apply.") from exc
+    started = time.monotonic()
     try:
         response = requests.post(
             OPENAI_CHAT_URL,
@@ -47,11 +51,22 @@ def _chat(system: str, user: str, max_tokens: int) -> str:
             timeout=TIMEOUT_SECONDS,
         )
         response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"].strip()
+        payload = response.json()
+        text = payload["choices"][0]["message"]["content"].strip()
     except requests.RequestException as exc:
+        trajectory.log_llm(DEFAULT_MODEL, system, user, purpose=purpose, error=f"{type(exc).__name__}: {exc}",
+                           latency_s=round(time.monotonic() - started, 3))
         raise OutreachLLMError("The writing model is unavailable right now. Please try again shortly.") from exc
     except (KeyError, IndexError, ValueError) as exc:
+        trajectory.log_llm(DEFAULT_MODEL, system, user, purpose=purpose, error=f"malformed response: {exc}",
+                           latency_s=round(time.monotonic() - started, 3))
         raise OutreachLLMError("The writing model returned an unexpected response.") from exc
+    trajectory.log_llm(
+        DEFAULT_MODEL, system, user, response=text, purpose=purpose,
+        usage=payload.get("usage"), latency_s=round(time.monotonic() - started, 3),
+        finish_reason=(payload.get("choices") or [{}])[0].get("finish_reason"),
+    )
+    return text
 
 
 TONE_INSTRUCTION = (
@@ -80,6 +95,7 @@ def paper_blurb(paper: dict, notes: str = "", tone_examples: list[str] | None = 
         ),
         user=json.dumps(facts, ensure_ascii=False),
         max_tokens=220,
+        purpose="paper_blurb",
     )
 
 
@@ -112,6 +128,7 @@ def outreach_message(
         ),
         user=json.dumps(facts, ensure_ascii=False),
         max_tokens=400,
+        purpose=f"outreach_message:{channel}",
     )
 
 
@@ -150,4 +167,5 @@ def followup_message(
         ),
         user=json.dumps(facts, ensure_ascii=False),
         max_tokens=180,
+        purpose=f"followup_{followup_number}:{channel}",
     )

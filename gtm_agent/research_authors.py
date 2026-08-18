@@ -32,6 +32,7 @@ import re
 
 from gtm_agent.config import ConfigError, get_paper_authors_db_id, get_paper_outreach_db_id
 from gtm_agent.notion_client import NotionApiError, NotionClient
+from gtm_agent.trajectory import run_main
 
 try:
     from claude_agent_sdk import AgentDefinition, ClaudeAgentOptions, ResultMessage, query
@@ -303,4 +304,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run_main(main, __file__))

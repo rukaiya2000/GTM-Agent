@@ -10,6 +10,7 @@ from gtm_agent.gmail_oauth import (
     generate_pkce_pair,
     save_token,
 )
+from gtm_agent.trajectory import run_main
 
 REDIRECT_HOST = "127.0.0.1"
 REDIRECT_PORT = 8766
@@ -68,4 +69,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run_main(main, __file__))

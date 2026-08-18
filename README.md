@@ -80,11 +80,30 @@ work; skills add judgement on top (voice matching, curation, drafting).
 | `publish-paper-outreach` | Sends the outreach messages you've set `Send Via` on (Email/X), drafts a LinkedIn note for manual copy-paste, and checks for replies/sends follow-ups. |
 | `deep-search` | Deep-research a market/company question (e.g. "AI safety companies in SF") by fanning out parallel subagents, and offers to save the results to a `.md` file or Notion. |
 
+## Run trajectories
+
+Every script run records what it did to `runs/` — args, the code it ran on,
+everything it printed, every LLM prompt and completion with token usage,
+per-recipient send outcomes, and the traceback if it died. Read them back
+with:
+
+```bash
+.venv/bin/python gtm_agent/runs.py                     # recent runs
+.venv/bin/python gtm_agent/runs.py errors --traceback  # every failure, grouped
+.venv/bin/python gtm_agent/runs.py show last           # replay one run
+.venv/bin/python gtm_agent/runs.py llm --full          # prompts, drafts, spend
+```
+
+Meant for error analysis and for improving the skills' instructions against
+real runs rather than memory. `runs/` is gitignored and holds real addresses
+and message bodies. See [docs/trajectories.md](docs/trajectories.md).
+
 ## Project layout
 
 - `gtm_agent/` — the library and scripts (config, X/Notion/Typefully/Gmail clients, drafting, posting, outreach)
 - `.claude/skills/` — the skills listed above
 - `memory/` — auto-generated notes on your voice and topic preferences, read by the drafting skills
+- `runs/` — one JSONL trajectory per script run, for after-the-fact analysis
 - `.env.example` — every credential the project can use, with notes on where to get each one
 
 LinkedIn sending is deliberately never automated — there's no official

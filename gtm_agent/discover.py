@@ -15,6 +15,7 @@ from gtm_agent.interests import load_interests
 from gtm_agent.notion_client import NotionApiError, NotionClient
 from gtm_agent.ranking import rank_tweets
 from gtm_agent.store import Store
+from gtm_agent.trajectory import run_main
 from gtm_agent.x_client import XApiError, XClient, full_text
 
 DEFAULT_LIMIT = 10
@@ -189,4 +190,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run_main(main, __file__))

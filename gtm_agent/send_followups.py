@@ -39,6 +39,7 @@ report back to Notion).
 import argparse
 from datetime import date
 
+from gtm_agent import trajectory
 from gtm_agent.config import (
     ConfigError,
     get_followup1_days,
@@ -143,6 +144,7 @@ def process_author(
     dry_run: bool,
 ) -> None:
     if check_replied(author, gmail_token, gmail_own_email, x_client, x_token, own_x_id):
+        trajectory.log("followup_outcome", author=author["name"], channel=author["send_via"], outcome="replied")
         print("  replied — stopping follow-ups")
         if not dry_run:
             notion.set_author_status(author["id"], "Replied")
@@ -150,6 +152,7 @@ def process_author(
 
     next_n = NEXT_FOLLOWUP.get(author["status"])
     if next_n is None:
+        trajectory.log("followup_outcome", author=author["name"], channel=author["send_via"], outcome="exhausted")
         print("  no reply yet, both follow-ups already sent")
         return
 
@@ -167,6 +170,8 @@ def process_author(
     elapsed = days_since(author["last_sent"])
     required = delays[next_n]
     if elapsed < required:
+        trajectory.log("followup_outcome", author=author["name"], channel=author["send_via"], outcome="not_due",
+                       followup=next_n, days_elapsed=elapsed, days_required=required)
         print(f"  no reply yet, {elapsed}/{required} days since last send — not due")
         return
 
@@ -176,6 +181,8 @@ def process_author(
             followup_number=next_n, tone_examples=tone_examples,
         )
     except OutreachLLMError as e:
+        trajectory.log("followup_outcome", author=author["name"], channel=author["send_via"],
+                       outcome="draft_failed", followup=next_n, error=str(e))
         print(f"  follow-up {next_n} drafting failed: {e}")
         return
 
@@ -186,6 +193,9 @@ def process_author(
     sent, note = send_followup(author, message, gmail_token, x_token)
     if sent:
         notion.record_followup(author["id"], next_n, message, FOLLOWUP_STATUS[next_n], date.today().isoformat())
+    trajectory.log("followup_outcome", author=author["name"], channel=author["send_via"],
+                   outcome="sent" if sent else "send_failed", followup=next_n,
+                   days_elapsed=elapsed, content=message, detail=note)
     print(f"    -> {note}")
 
 
@@ -245,4 +255,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(trajectory.run_main(main, __file__))

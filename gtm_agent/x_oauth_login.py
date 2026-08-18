@@ -4,6 +4,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from gtm_agent.config import ConfigError, get_x_client_id, get_x_client_secret
+from gtm_agent.trajectory import run_main
 from gtm_agent.x_oauth import (
     build_authorize_url,
     exchange_code_for_token,
@@ -70,4 +71,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run_main(main, __file__))

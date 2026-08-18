@@ -2,6 +2,7 @@ from gtm_agent.config import ConfigError
 from gtm_agent.harvest import run_harvest
 from gtm_agent.interests import load_interests
 from gtm_agent.store import Store
+from gtm_agent.trajectory import run_main
 from gtm_agent.x_client import XApiError, XClient
 
 
@@ -45,4 +46,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run_main(main, __file__))

@@ -45,6 +45,7 @@ for a reply and, if there isn't one, send up to two follow-ups.
 import argparse
 from datetime import date, datetime, timezone
 
+from gtm_agent import trajectory
 from gtm_agent.config import (
     ConfigError,
     get_gmail_client_id,
@@ -239,6 +240,15 @@ def send_for_paper(
 
     to_send = [a for a in with_send_via if is_due(a)]
     not_due = len(with_send_via) - len(to_send)
+    trajectory.log(
+        "paper_staged",
+        paper=paper_row["name"],
+        authors=len(authors),
+        with_send_via=len(with_send_via),
+        skipped=len(skipped),
+        not_due=not_due,
+        due=len(to_send),
+    )
     if not_due:
         print(f"  {not_due} author(s) have a future Scheduled Time — not due yet.")
     if not to_send:
@@ -251,10 +261,12 @@ def send_for_paper(
 
     for author in to_send:
         if author["status"] == "Sent":
+            trajectory.log("outreach_skip", author=author["name"], channel=author["send_via"], reason="already_sent")
             continue  # already sent — never resend on a re-run
         channel = author["send_via"]
         content = author["linkedin_note"] if channel == "LinkedIn" else author["message"]
         if not content:
+            trajectory.log("outreach_skip", author=author["name"], channel=channel, reason="no_draft")
             continue  # drafting failed above, already reported
         subject = author.get("subject") or "" if channel == "Email" else ""
         sent, note, thread_ref = attempt_send(
@@ -269,6 +281,19 @@ def send_for_paper(
         else:
             notion.set_author_message(author["id"], author["message"], status="Message Drafted", post_error=note)
         status = "Sent" if sent else "Message Drafted"
+        trajectory.log(
+            "outreach_send",
+            author=author["name"],
+            channel=channel,
+            sent=sent,
+            status=status,
+            outcome=note,
+            paper=paper_row["name"],
+            recipient=author["email"] if channel == "Email" else author["x_handle"],
+            subject=subject or None,
+            content=content,
+            thread_ref=thread_ref,
+        )
         print(f"  {author['name']} ({channel}, {status}): -> {note}")
 
 
@@ -327,4 +352,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(trajectory.run_main(main, __file__))

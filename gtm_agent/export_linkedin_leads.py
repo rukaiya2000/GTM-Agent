@@ -29,6 +29,7 @@ from pathlib import Path
 
 from gtm_agent.config import ConfigError, get_paper_authors_db_id, get_paper_outreach_db_id
 from gtm_agent.notion_client import NotionApiError, NotionClient
+from gtm_agent.trajectory import run_main
 
 EXPORT_DIR = Path("exports/linkedin")
 # Statuses that mean outreach already went out on some channel — never re-export.
@@ -122,4 +123,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run_main(main, __file__))
