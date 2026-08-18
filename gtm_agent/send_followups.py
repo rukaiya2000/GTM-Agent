@@ -37,7 +37,7 @@ report back to Notion).
 """
 
 import argparse
-from datetime import date
+from datetime import date, timedelta
 
 from gtm_agent import trajectory
 from gtm_agent.config import (
@@ -169,33 +169,51 @@ def process_author(
 
     elapsed = days_since(author["last_sent"])
     required = delays[next_n]
-    if elapsed < required:
+    due = author.get(f"followup_{next_n}_due")
+    if due:
+        # The date written on the row at send time wins, because it is what
+        # the human sees in Notion — editing it there is the obvious way to
+        # push a follow-up back, and a gate that ignored it would be a trap.
+        not_due, waiting = date.today().isoformat() < due, f"due {due}"
+    else:
+        not_due, waiting = elapsed < required, f"{elapsed}/{required} days since last send"
+    if not_due:
         trajectory.log("followup_outcome", author=author["name"], channel=author["send_via"], outcome="not_due",
-                       followup=next_n, days_elapsed=elapsed, days_required=required)
-        print(f"  no reply yet, {elapsed}/{required} days since last send — not due")
+                       followup=next_n, days_elapsed=elapsed, days_required=required, due=due)
+        print(f"  no reply yet, {waiting} — not due")
         return
 
-    try:
-        message = followup_message(
-            previous_message=author["message"], channel=author["send_via"],
-            followup_number=next_n, tone_examples=tone_examples,
-        )
-    except OutreachLLMError as e:
-        trajectory.log("followup_outcome", author=author["name"], channel=author["send_via"],
-                       outcome="draft_failed", followup=next_n, error=str(e))
-        print(f"  follow-up {next_n} drafting failed: {e}")
-        return
+    # Normally drafted back when the initial message sent, so the human has
+    # had the whole wait to review or rewrite it. Drafting here is the
+    # fallback for rows sent before that existed.
+    message, origin = author.get(f"followup_{next_n}_message") or "", "staged in Notion"
+    if not message:
+        try:
+            message = followup_message(
+                previous_message=author["message"], channel=author["send_via"],
+                followup_number=next_n, tone_examples=tone_examples,
+            )
+            origin = "drafted now"
+        except OutreachLLMError as e:
+            trajectory.log("followup_outcome", author=author["name"], channel=author["send_via"],
+                           outcome="draft_failed", followup=next_n, error=str(e))
+            print(f"  follow-up {next_n} drafting failed: {e}")
+            return
 
-    print(f"  follow-up {next_n} draft:\n    {message}")
+    print(f"  follow-up {next_n} ({origin}):\n    {message}")
     if dry_run:
         return
 
     sent, note = send_followup(author, message, gmail_token, x_token)
     if sent:
-        notion.record_followup(author["id"], next_n, message, FOLLOWUP_STATUS[next_n], date.today().isoformat())
+        # Follow-up 2 is counted from when Follow-up 1 actually went out, so
+        # its projected date is corrected here rather than left to drift.
+        next_due = (date.today() + timedelta(days=delays[2])).isoformat() if next_n == 1 else None
+        notion.record_followup(author["id"], next_n, message, FOLLOWUP_STATUS[next_n],
+                               date.today().isoformat(), next_due=next_due)
     trajectory.log("followup_outcome", author=author["name"], channel=author["send_via"],
                    outcome="sent" if sent else "send_failed", followup=next_n,
-                   days_elapsed=elapsed, content=message, detail=note)
+                   days_elapsed=elapsed, content=message, origin=origin, detail=note)
     print(f"    -> {note}")
 
 

@@ -25,6 +25,7 @@ Inside a run file, one JSON object per line, in the order things happened:
 | `llm` | model, full system and user prompt, the completion, **reasoning if the model emits any**, token usage, latency, finish reason — or the error instead |
 | `outreach_send` / `outreach_skip` | per-author: channel, recipient, whether it sent, the reason it didn't, the message body |
 | `followup_outcome` | per-author: replied, not due (with the day count), sent, send failed, drafting failed |
+| `followup_scheduled` | per-author: both follow-up due dates and which drafts were written at send time |
 | `paper_staged` | how many authors were staged, skipped, held by `Scheduled Time`, and due |
 | `step_start` / `step_end` | a named phase and how long it took, recorded even when it raises |
 | `error` | exception type, message, full traceback |

@@ -43,11 +43,13 @@ for a reply and, if there isn't one, send up to two follow-ups.
 """
 
 import argparse
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from gtm_agent import trajectory
 from gtm_agent.config import (
     ConfigError,
+    get_followup1_days,
+    get_followup2_days,
     get_gmail_client_id,
     get_gmail_client_secret,
     get_paper_authors_db_id,
@@ -58,7 +60,7 @@ from gtm_agent.config import (
 from gtm_agent.gmail_client import GmailApiError, send_email, split_subject_and_body
 from gtm_agent.gmail_oauth import get_valid_access_token as get_valid_gmail_token
 from gtm_agent.notion_client import NotionApiError, NotionClient
-from gtm_agent.outreach_llm import OutreachLLMError, outreach_message
+from gtm_agent.outreach_llm import OutreachLLMError, followup_message, outreach_message
 from gtm_agent.x_client import XApiError, send_dm
 from gtm_agent.x_oauth import get_valid_access_token as get_valid_x_token
 
@@ -205,6 +207,56 @@ def draft_messages(
         print(f"  {a['name']}: drafted LinkedIn note ({len(note)} chars)\n    {note}\n")
 
 
+def schedule_followups(notion: NotionClient, authors: list[dict], tone_examples: list[str]) -> None:
+    """Draft both follow-ups and date them the moment the initial message
+    sends, rather than letting each appear only once it fires. The point is
+    review time: send_followups.py sends whatever text is on the row when it
+    comes due, so anything edited in Notion before then is what actually goes
+    out, and an already-filled follow-up is never overwritten here.
+
+    Follow-up 2's date is a projection — it is counted from when Follow-up 1
+    actually sends, so `record_followup` corrects it at that point.
+    """
+    if not authors:
+        return
+    delays = {1: get_followup1_days(), 2: get_followup2_days()}
+    # One draft per channel, reused across that channel's authors — the same
+    # deliberate choice as the initial message, which isn't personalised
+    # either beyond its salutation.
+    drafts: dict[tuple[str, int], str] = {}
+    for author in authors:
+        channel = author["send_via"]
+        # Counted from when this author was actually written to, not from
+        # now, so backfilling a row sent days ago dates it correctly.
+        anchor = date.fromisoformat(author.get("last_sent") or date.today().isoformat())
+        due = {
+            1: (anchor + timedelta(days=delays[1])).isoformat(),
+            2: (anchor + timedelta(days=delays[1] + delays[2])).isoformat(),
+        }
+        notion.set_followup_schedule(author["id"], due)
+        print(f"    follow-ups scheduled: 1 on {due[1]}, 2 on or after {due[2]}")
+        for n in (1, 2):
+            if author.get(f"followup_{n}_message"):
+                continue  # already drafted, or written by hand — leave it alone
+            key = (channel, n)
+            if key not in drafts:
+                try:
+                    drafts[key] = followup_message(
+                        previous_message=author["message"], channel=channel,
+                        followup_number=n, tone_examples=tone_examples,
+                    )
+                except OutreachLLMError as e:
+                    print(f"    follow-up {n} drafting failed: {e}")
+                    continue
+            notion.set_followup_draft(author["id"], n, drafts[key])
+            print(f"    follow-up {n} draft:\n      {drafts[key]}")
+        trajectory.log(
+            "followup_scheduled", author=author["name"], channel=channel,
+            due_1=due[1], due_2=due[2],
+            drafted=[n for n in (1, 2) if (channel, n) in drafts],
+        )
+
+
 def send_for_paper(
     notion: NotionClient,
     authors_db_id: str,
@@ -259,6 +311,7 @@ def send_for_paper(
     # missing one and not the other.
     draft_messages(notion, paper_row, to_send, tone_examples)
 
+    just_sent: list[dict] = []
     for author in to_send:
         if author["status"] == "Sent":
             trajectory.log("outreach_skip", author=author["name"], channel=author["send_via"], reason="already_sent")
@@ -278,6 +331,7 @@ def send_for_paper(
         elif sent:
             notion.set_author_message(author["id"], author["message"], status="Sent", post_error="")
             notion.record_initial_send(author["id"], thread_ref, date.today().isoformat())
+            just_sent.append(author)
         else:
             notion.set_author_message(author["id"], author["message"], status="Message Drafted", post_error=note)
         status = "Sent" if sent else "Message Drafted"
@@ -295,6 +349,16 @@ def send_for_paper(
             thread_ref=thread_ref,
         )
         print(f"  {author['name']} ({channel}, {status}): -> {note}")
+
+    # A row sent before follow-ups were scheduled at send time has no dates
+    # and no drafts; fill them in rather than leaving it silently stranded.
+    backfill = [
+        a for a in to_send
+        if a["status"] == "Sent" and a not in just_sent and not a["followup_1_due"] and a["last_sent"]
+    ]
+    if backfill:
+        print(f"  {len(backfill)} already-sent author(s) had no follow-up schedule — filling it in.")
+    schedule_followups(notion, just_sent + backfill, tone_examples)
 
 
 def main() -> int:

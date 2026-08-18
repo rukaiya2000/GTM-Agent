@@ -481,6 +481,8 @@ class NotionClient:
                     "thread_ref": _plain_text(props.get("Thread Ref")),
                     "followup_1_message": _plain_text(props.get("Followup 1 Message")),
                     "followup_2_message": _plain_text(props.get("Followup 2 Message")),
+                    "followup_1_due": _date_start(props.get("Followup 1 Due")),
+                    "followup_2_due": _date_start(props.get("Followup 2 Due")),
                 }
             )
         return rows
@@ -569,14 +571,29 @@ class NotionClient:
             properties["Thread Ref"] = {"rich_text": [{"text": {"content": thread_ref[:2000]}}]}
         self.update_page(page_id, properties)
 
-    def record_followup(self, page_id: str, followup_number: int, message: str, status: str, sent_date: str) -> None:
+    def record_followup(
+        self, page_id: str, followup_number: int, message: str, status: str, sent_date: str,
+        next_due: str | None = None,
+    ) -> None:
+        properties: dict = {
+            f"Followup {followup_number} Message": {"rich_text": [{"text": {"content": message[:2000]}}]},
+            "Status": {"select": {"name": status}},
+            "Last Sent": {"date": {"start": sent_date}},
+        }
+        if next_due:
+            # The projection written at initial-send time assumed this
+            # follow-up went out exactly on schedule. It rarely does, so the
+            # next one's date is corrected against when this actually sent.
+            properties[f"Followup {followup_number + 1} Due"] = {"date": {"start": next_due}}
+        self.update_page(page_id, properties)
+
+    def set_followup_schedule(self, page_id: str, due_dates: dict[int, str]) -> None:
+        """When each follow-up is expected to go out, so the whole cadence is
+        visible in Notion the moment the first message sends rather than
+        appearing one row at a time as each one fires."""
         self.update_page(
             page_id,
-            {
-                f"Followup {followup_number} Message": {"rich_text": [{"text": {"content": message[:2000]}}]},
-                "Status": {"select": {"name": status}},
-                "Last Sent": {"date": {"start": sent_date}},
-            },
+            {f"Followup {n} Due": {"date": {"start": due}} for n, due in due_dates.items()},
         )
 
     def set_followup_draft(self, page_id: str, followup_number: int, message: str) -> None:

@@ -57,6 +57,17 @@ whether it sent or only drafted (and why, if it only drafted), and the
 content for anything that needs manual copy-paste — `Message` (with
 `Subject`, for Email) for Email/X, or `LinkedIn Note` for LinkedIn.
 
+A successful Email/X send also stages that author's whole follow-up cadence
+in Notion straight away: `Followup 1 Message` and `Followup 2 Message` are
+drafted, and `Followup 1 Due` / `Followup 2 Due` are dated from the send
+(`OUTREACH_FOLLOWUP1_DAYS`/`OUTREACH_FOLLOWUP2_DAYS`, default 6/10). The
+point is review time — the human has the whole wait to rewrite either draft
+or move either date in Notion, and `send_followups.py` sends whatever is on
+the row when it comes due. Neither field is ever overwritten once filled.
+Report the dates alongside each send. An author already `Sent` but with no
+`Followup 1 Due` (sent before this existed) gets the schedule backfilled
+from their `Last Sent` on the next run.
+
 `Send Via = LinkedIn` never sends from our code — there's no official
 LinkedIn API, and this repo never drives LinkedIn directly (no passwords,
 no LinkedIn endpoints; that boundary stands). Instead, LinkedIn sends run
@@ -85,8 +96,14 @@ LinkedIn send happened.
 
 Safe to run repeatedly — checks Email/X threads for a reply first (stops
 follow-ups permanently on that author if found), otherwise sends the next
-scheduled follow-up if enough time has passed (`OUTREACH_FOLLOWUP1_DAYS`/
-`OUTREACH_FOLLOWUP2_DAYS` in `.env`, default 6/10 days). Never sends a third
+scheduled follow-up if it's due. `Followup N Due` on the row is what decides
+due-ness, so moving that date in Notion is how a follow-up gets pushed back;
+rows without one (sent before dates existed) fall back to counting
+`OUTREACH_FOLLOWUP1_DAYS`/`OUTREACH_FOLLOWUP2_DAYS` (default 6/10) from
+`Last Sent`. The staged `Followup N Message` is what sends — it's only
+drafted here if the row somehow has none. Follow-up 2's date is corrected
+when Follow-up 1 actually goes out, since it counts from that send rather
+than from the original. Never sends a third
 message after Follow-up 2. Report who replied, who got a follow-up, and who's
 still waiting on timing. Run this by default when the user just says "check
 outreach" with no other signal.

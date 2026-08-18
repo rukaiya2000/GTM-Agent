@@ -233,27 +233,33 @@ def cmd_summary(runs: list[dict], args) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--script", help="Only runs of this script, e.g. send_outreach")
-    parser.add_argument("--skill", help="Only runs driven by this skill, e.g. publish-paper-outreach")
-    parser.add_argument("--asked", help="Only runs whose prompt contains this text (case-insensitive)")
-    parser.add_argument("--limit", type=int, default=20, help="Most recent N runs (0 for all)")
+    # Shared by the top-level parser and every subcommand, so the filters
+    # work on either side of the subcommand rather than only before it.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--script", help="Only runs of this script, e.g. send_outreach")
+    common.add_argument("--skill", help="Only runs driven by this skill, e.g. publish-paper-outreach")
+    common.add_argument("--asked", help="Only runs whose prompt contains this text (case-insensitive)")
+    common.add_argument("--limit", type=int, default=20, help="Most recent N runs (0 for all)")
+
+    parser = argparse.ArgumentParser(
+        description=__doc__, parents=[common], formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     sub = parser.add_subparsers(dest="command")
 
-    p_list = sub.add_parser("list", help="Recent runs, newest last (the default)")
+    p_list = sub.add_parser("list", parents=[common], help="Recent runs, newest last (the default)")
     p_list.add_argument("--failed", action="store_true", help="Only runs that did not end ok")
 
-    p_errors = sub.add_parser("errors", help="Every recorded error, grouped by script and type")
+    p_errors = sub.add_parser("errors", parents=[common], help="Every recorded error, grouped by script and type")
     p_errors.add_argument("--traceback", action="store_true", help="Include the latest traceback of each group")
 
-    p_show = sub.add_parser("show", help="Replay one run in order")
+    p_show = sub.add_parser("show", parents=[common], help="Replay one run in order")
     p_show.add_argument("run", nargs="?", default="last", help="Run id, unique prefix, script name, or 'last'")
     p_show.add_argument("--prompts", action="store_true", help="Include full LLM prompts, not just responses")
 
-    p_llm = sub.add_parser("llm", help="LLM calls and token usage")
+    p_llm = sub.add_parser("llm", parents=[common], help="LLM calls and token usage")
     p_llm.add_argument("--full", action="store_true", help="Include full prompts and responses")
 
-    sub.add_parser("summary", help="Per-script health, per-item outcomes, token spend")
+    sub.add_parser("summary", parents=[common], help="Per-script health, per-item outcomes, token spend")
 
     args = parser.parse_args()
     if args.limit == 0:
